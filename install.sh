@@ -2844,11 +2844,14 @@ utxo_seed_start(){
 # Seeds the UTXO snapshot this node downloaded to other installing nodes (BitTorrent), for at most MINUTES or until
 # share ratio 2. Started by the installer as the transient service alphapool-snapshot-seed; stop: systemctl stop alphapool-snapshot-seed
 set -u
-f=$1 t=$2 mins=${3:-120} rule=0
+f=$1 t=$2 mins=${3:-120}
 if ufw status 2>/dev/null | head -1 | grep -q 'Status: active'; then
-  ufw allow 6881:6889/tcp comment "AlphaPool node: snapshot seeding (temporary)" >/dev/null 2>&1 && rule=1
+  ufw allow 6881:6889/tcp comment "AlphaPool node: snapshot seeding (temporary)" >/dev/null 2>&1
 fi
-finish(){ [ "$rule" = 1 ] && ufw delete allow 6881:6889/tcp >/dev/null 2>&1; rm -f -- "$t"; }
+finish(){   # the rule may also have been added by the firewall step, after this seeder started: removed either way
+  if ufw status 2>/dev/null | head -1 | grep -q 'Status: active'; then ufw delete allow 6881:6889/tcp >/dev/null 2>&1; fi
+  rm -f -- "$t"
+}
 trap finish EXIT
 # aria2 gives up when it cannot bind its listen port: it gets a range and takes the first free one
 aria2c -q -d "$(dirname "$f")" --index-out="1=$(basename "$f")" --check-integrity=true --file-allocation=none \
@@ -3493,6 +3496,10 @@ step_firewall(){
   run_q ufw allow "$STRATUM_PORT/tcp" comment "AlphaPool node: stratum (rigs)" || die AP-509 "ufw could not allow port $STRATUM_PORT (to manage the firewall yourself: run again with --firewall off)"
   for p in $ALIAS_PORTS; do run_q ufw allow "$p/tcp" comment "AlphaPool node: stratum alias" || die AP-509 "ufw could not allow port $p (to manage the firewall yourself: run again with --firewall off)"; done
   run_q ufw allow 8333/tcp comment "AlphaPool node: Bitcoin peers" || die AP-509 "ufw could not allow port 8333 (to manage the firewall yourself: run again with --firewall off)"
+  # the snapshot seeder (step 5) started before the firewall came up: let other installing nodes reach it meanwhile
+  if systemctl is-active --quiet alphapool-snapshot-seed.service 2>/dev/null; then
+    run_q ufw allow 6881:6889/tcp comment "AlphaPool node: snapshot seeding (temporary)" || warn "ufw could not allow 6881-6889 for the snapshot seeding; it still uploads to the peers it connects to"
+  fi
   run_q ufw default deny incoming || die AP-509 "ufw could not set deny incoming (to manage the firewall yourself: run again with --firewall off)"
   run_q ufw default allow outgoing || die AP-509 "ufw could not set allow outgoing (to manage the firewall yourself: run again with --firewall off)"
   run_q ufw --force enable || die AP-509 "ufw could not be enabled (to manage the firewall yourself: run again with --firewall off)"
