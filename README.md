@@ -238,6 +238,7 @@ alphapool-node disable | enable             keep everything off across reboots /
 alphapool-node heartbeat off | on <id> | status
 alphapool-node switch gateway alphapool | file PATH | url URL SHA256 | git REPO_URL COMMIT
 alphapool-node switch knots alphapool | url URL [SHA256] | dir PATH
+alphapool-node upgrade check | <sha256> [--yes]   is a newer installer published? / download it (sha256-checked) and upgrade
 alphapool-node upgrade [--yes] [--knots alphapool] [--gateway alphapool]   to the installer's pinned versions, in place
 alphapool-node set address <payout address> | set tag "<block name>"
 alphapool-node gateway-page                 how to open the gateway's own page through SSH
@@ -268,7 +269,9 @@ unprivileged node user sends this to `https://xbt.alphapool.tech/api/node/heartb
 - the number of connected rigs;
 - whether the live job pays AlphaPool;
 - the stratum host:port;
-- the sha256 of the running gateway binary.
+- the sha256 of the running gateway binary;
+- the version line of the installed bitcoind and the installer's version (so the dashboard can show who still has to
+  update before a soft fork).
 
 It is status only. It never sends RPC credentials, the gateway admin password, keys, config files or rig passwords.
 The reply is thrown away: nothing AlphaPool sends back is read or run. The token reaches the agent through systemd
@@ -300,6 +303,16 @@ Turn it off at any time with `alphapool-node heartbeat off`, or with `systemctl 
 
 **Updates.**
 
+- Nothing updates by itself, and AlphaPool has no way to push one. You check, and you run it:
+  - `alphapool-node upgrade check` downloads the published installer, prints its version and sha256 next to the
+    installed one, and runs nothing.
+  - `alphapool-node upgrade <sha256>` downloads it again and refuses it unless its sha256 is the one you give, from
+    your dashboard ("My node") or the [CHANGELOG](CHANGELOG.md): the same check the first install made. It then runs
+    that installer's upgrade (see "Upgrade"), which shows what changes and asks first.
+- A release that every node must run from a given block (a soft fork: new consensus rules) carries that version and
+  block in the script (`KNOTS_REQUIRED_VER`, `KNOTS_REQUIRED_BY_HEIGHT`). From then on `alphapool-node status` shows
+  an `UPDATE` line until this node runs it, the installer and the upgrade warn, and the heartbeat reports the
+  installed versions.
 - It does not turn off your server's own security updates: nobody else patches your server.
 - It tells `needrestart` never to restart the node or the gateway by itself, so a library update never bounces your
   rigs. Restart them when it suits you: `alphapool-node restart`.

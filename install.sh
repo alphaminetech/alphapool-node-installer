@@ -20,6 +20,8 @@
 # Your node, your software: --gateway-* and --knots-* install other builds, `alphapool-node switch` changes them
 # later, and re-running this installer never replaces a build you chose or a file you edited by hand.
 # Upgrade in place (no resync): download the new installer, then  sudo bash ap-node.sh --upgrade
+# Is a newer installer published? `alphapool-node upgrade check` says so and runs nothing; `alphapool-node upgrade
+# <sha256>` downloads it, refuses it unless its sha256 is the one you give, then runs --upgrade. Nothing updates by itself.
 set -uo pipefail
 umask 022
 export LC_ALL=C
@@ -57,6 +59,12 @@ INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cl
 # keep their mode and their chain; `alphapool-node upgrade` moves them to their mode's build in the new installer.
 START_DEFAULT="fast"
 START_LEGACY="official"
+# A Bitcoin Knots release that EVERY node must run from a given block (new consensus rules: a soft fork). Empty until
+# such a release exists; the installer release that pins it fills both values. From then on `alphapool-node status`
+# shows an UPDATE line on a node whose bitcoind is not that release, the installer and the upgrade warn, and the
+# heartbeat reports the installed versions so the dashboard can show who still has to update.
+KNOTS_REQUIRED_VER=""
+KNOTS_REQUIRED_BY_HEIGHT=0
 start_modes(){ cat <<'MODES'
 official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
 fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|pin|840000 880000 910000 976000|976000|about half an hour|a developer build of Bitcoin Knots with the 976000 snapshot|This developer build is pinned by its sha256 and is not signed by the release builders; when the signed release includes this snapshot, the upgrade command moves your node to that release.|这个开发者构建版按 sha256 固定，发布构建者没有为它签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
@@ -1543,11 +1551,11 @@ UNIT
 write_agent(){
   cat > "$LIB/heartbeat-agent.new" <<'AGENT'
 #!/bin/bash
-# alphapool heartbeat agent (v5): the OPTIONAL status report from a self-hosted AlphaPool node to its owner's
+# alphapool heartbeat agent (v6): the OPTIONAL status report from a self-hosted AlphaPool node to its owner's
 # dashboard. Runs as the unprivileged node user every 20 s; the token arrives through systemd's LoadCredential.
 # SENDS: node sync progress and peers, chain-snapshot restore progress, whether the node and the gateway run, how many
 #        rigs are connected, whether the live job pays AlphaPool, the stratum host:port, the sha256 of the gateway
-#        executable that runs.
+#        executable that runs, the version line of the installed bitcoind and the installer's version.
 # NEVER SENDS: RPC credentials, the gateway admin password, keys, config files, wallet data, rig passwords.
 # The reply is discarded: nothing AlphaPool sends back is ever read or run. Failures are silent and never touch mining.
 set -uo pipefail
@@ -1563,6 +1571,8 @@ CLI=${AP_HB_CLI:-/usr/local/bin/bitcoin-cli -datadir=/home/alphapool/.bitcoin}
 GW_API=${AP_HB_GW_API:-http://127.0.0.1:7152}
 RESTORE_STATE=${AP_HB_RESTORE:-/run/alphapool/restore.json}
 OWN=$(sed -n 's/^ADDRESS=//p' "${AP_HB_NODE_CONF:-/etc/alphapool/node.conf}" 2>/dev/null | tail -1)
+VERSIONS=${AP_HB_VERSIONS:-/etc/alphapool/versions}
+BITCOIND=${AP_HB_BITCOIND:-/usr/local/bin/bitcoind}
 
 int(){ [[ ${1:-} =~ ^[0-9]{1,15}$ ]] && printf '%s' "$1" || printf 0; }
 frac(){ [[ ${1:-} =~ ^[0-9]+(\.[0-9]+)?([eE]-?[0-9]+)?$ ]] && printf '%s' "$1" || printf 0; }
@@ -1597,6 +1607,9 @@ case "${rst:-}" in none|skipped|downloading|verifying|extracting|done|failed) ;;
 rb=$(int "${rb:-}"); rt=$(int "${rt:-}")
 pub=${PUBLIC_HOST:-$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')}
 [[ ${pub:-} =~ ^[A-Za-z0-9.-]{1,253}$ ]] || pub=''
+# versions, as plain printable text without quotes or backslashes (they go into the JSON below)
+kver=$(timeout 5 "$BITCOIND" -version 2>/dev/null | head -n 1 | tr -cd ' -~' | tr -d '"\\' | head -c 80)
+iver=$(sed -n 's/^installer=//p' "$VERSIONS" 2>/dev/null | tail -1 | tr -cd ' -~' | tr -d '"\\' | head -c 40)
 if   [ "$ns" != active ] && [[ $rst =~ ^(downloading|verifying|extracting)$ ]]; then ph=restoring
 elif [ "$ns" != active ];                                  then ph=starting
 elif [ "$ibd" = true ];                                    then ph=syncing
@@ -1606,9 +1619,9 @@ elif [ "$payees" -gt 0 ] && [ "$rigs" -gt 0 ];             then ph=mining
 elif [ "$payees" -gt 0 ];                                  then ph=ready
 else                                                            ph=connecting
 fi
-body=$(printf '{"node_id":"%s","ts":%s,"phase":"%s","node":{"state":"%s","height":%s,"headers":%s,"progress":%s,"ibd":%s,"peers":%s,"size_on_disk":%s},"endpoint":{"host":"%s","port":%s},"gateway":{"state":"%s","coinbase_payees":%s,"rigs":%s,"exe_sha256":"%s"},"restore":{"state":"%s","bytes":%s,"total":%s},"agent":{"v":5}}' \
+body=$(printf '{"node_id":"%s","ts":%s,"phase":"%s","node":{"state":"%s","height":%s,"headers":%s,"progress":%s,"ibd":%s,"peers":%s,"size_on_disk":%s},"endpoint":{"host":"%s","port":%s},"gateway":{"state":"%s","coinbase_payees":%s,"rigs":%s,"exe_sha256":"%s"},"restore":{"state":"%s","bytes":%s,"total":%s},"software":{"knots":"%s","installer":"%s"},"agent":{"v":6}}' \
   "$NODE_ID" "$(date -u +%s)" "$ph" "$ns" "$h" "$hd" "$pg" "$ibd" "$peers" "$sz" "$pub" "$(int "$STRATUM_PORT")" \
-  "$gs" "$payees" "$rigs" "$exe" "$rst" "$rb" "$rt")
+  "$gs" "$payees" "$rigs" "$exe" "$rst" "$rb" "$rt" "$kver" "$iver")
 timeout 8 curl -sS -X POST "$ENDPOINT" -H 'Content-Type: application/json' \
   -H "Authorization: Bearer ${TOKEN}" --data-binary "$body" >/dev/null 2>&1
 exit 0
@@ -1651,6 +1664,9 @@ alphapool-node switch knots url URL [SHA256]                 another Knots relea
 alphapool-node switch knots dir /path                        bitcoind + bitcoin-cli you built
 alphapool-node set address <payout address>  |  set tag "<block name>"
 alphapool-node gateway-page                 how to open the gateway's own web page (through SSH)
+alphapool-node upgrade check                is a newer installer published? (downloads it; runs nothing)
+alphapool-node upgrade <sha256> [--yes]     download the published installer, refuse it unless its sha256 is the one your
+                                            dashboard (or the CHANGELOG) shows, then run its upgrade (it asks first)
 alphapool-node upgrade [--yes]              move Bitcoin Knots and the gateway to the versions pinned by the installer on
                                             this server (the last one you downloaded and ran), in place, with a way back.
                                             Your own builds are left alone unless you add --knots alphapool / --gateway alphapool
@@ -1681,7 +1697,7 @@ eta_text(){
   else printf 'about %d h %02d min' $(( s / 3600 )) $(( s % 3600 / 600 * 10 )); fi
 }
 status(){
-  local port addr tag info b h ibd peers ns gs rigs payees host w res pins why nodeline eta ts cs ncs bgb sh late=0 age gwsha A
+  local port addr tag info b h ibd peers ns gs rigs payees host w res pins why nodeline eta ts cs ncs bgb sh late=0 age gwsha A kv reqh
   port=$(val STRATUM_PORT $ETC/node.conf); port=${port:-23334}
   addr=$(val ADDRESS $ETC/node.conf); tag=$(val TAG $ETC/node.conf)
   res=$(cat $ETC/last-result 2>/dev/null)
@@ -1817,6 +1833,15 @@ status(){
     w=$(pin gateway_pin)             # the label alone can be the same for two builds of one release: the sha256 tells them apart
     echo "  upgrade  : newer pinned build available: DATUM gateway $(pin gateway_label), sha256 ${w:0:12}... - run: sudo alphapool-node upgrade"
   fi
+  # the soft-fork pin: a release every node must run from a given block (new consensus rules)
+  w=$(pin knots_required_ver); [ -n "$w" ] || w=$(val knots_required_ver $ETC/versions)
+  if [ -n "$w" ]; then
+    kv=$(/usr/local/bin/bitcoind -version 2>/dev/null | head -1); reqh=$(pin knots_required_by_height); [ -n "$reqh" ] || reqh=$(val knots_required_by_height $ETC/versions)
+    case "$kv" in *"$w"*) ;; *)
+      echo "  UPDATE   : Bitcoin Knots $w is required from block $(sep "${reqh:-?}") (new consensus rules; this node: block $(sep "${b:-?}"))."
+      echo "             Update before that block: sudo alphapool-node upgrade check";; esac
+  fi
+  echo "  updates  : nothing updates by itself - a newer installer published? alphapool-node upgrade check"
   if systemctl is-enabled --quiet alphapool-heartbeat.timer 2>/dev/null; then echo "  heartbeat: on (status only) - turn off: alphapool-node heartbeat off"
   else echo "  heartbeat: off (nothing is reported to AlphaPool)"; fi
   w=$(as_u cat "$DD/bitcoin.conf" 2>/dev/null | sed -n 's/^[[:space:]]*blockmaxweight[[:space:]]*=[[:space:]]*//p' | head -1)
@@ -1835,6 +1860,41 @@ status_watch(){
     wait "$watch_sleep"; watch_sleep=""
   done
   trap - INT TERM
+}
+# upgrade_fetch: the published installer, by you. `check` downloads it to the installer's work area, compares it with
+# the installed copy and runs nothing. `<sha256>` downloads it and runs its --upgrade only if its sha256 is the one you
+# give (from your AlphaPool dashboard "My node", or the CHANGELOG in the installer's repository): the same check the
+# first install made. Nothing updates by itself, and AlphaPool cannot push an update: this command is yours to run.
+upgrade_fetch(){
+  local what=${1:-check} url f sha cur ver
+  url=$(sed -n 's/^INSTALLER_URL="\(https:[^"]*\)".*/\1/p' "$INSTALLER" | head -1)
+  cur=$(sha256sum "$INSTALLER" 2>/dev/null | cut -c1-64)
+  [ -n "$url" ] || { echo "no installer URL in $INSTALLER"; exit 1; }
+  if [ "$what" != check ]; then
+    [[ $what =~ ^[0-9a-f]{64}$ ]] || { usage; exit 1; }
+    [ "$what" != "$cur" ] || { echo "the installer with sha256 $cur is already on this node; to repeat its upgrade: sudo alphapool-node upgrade"; exit 0; }
+  fi
+  mkdir -p /var/lib/alphapool/dl && chmod 0700 /var/lib/alphapool /var/lib/alphapool/dl || exit 1
+  f=/var/lib/alphapool/dl/ap-node-published.sh
+  rm -f "$f"
+  curl -fsSL --retry 3 --connect-timeout 20 -o "$f" "$url" || { rm -f "$f"; echo "could not download $url"; exit 1; }
+  sha=$(sha256sum "$f" | cut -c1-64); ver=$(sed -n 's/^AP_VERSION="\([^"]*\)".*/\1/p' "$f" | head -1)
+  case "$what" in
+    check)
+      rm -f "$f"
+      echo "installed: installer $(val installer_version $ETC/state)  sha256 $cur"
+      echo "published: installer ${ver:-?}  sha256 $sha  ($url)"
+      if [ "$sha" = "$cur" ]; then echo "this node runs the published installer: nothing to update"; exit 0; fi
+      echo "A different installer is published. Nothing was run. If its sha256 is the one your AlphaPool dashboard"
+      echo "(My node) or the CHANGELOG at https://github.com/alphaminetech/alphapool-node-installer shows, upgrade with:"
+      echo "  sudo alphapool-node upgrade $sha";;
+    *)
+      if [ "$sha" != "$what" ]; then
+        rm -f "$f"; echo "the downloaded installer has sha256 $sha, not $what: NOT run (deleted). Check the sha256 on your dashboard and try again."; exit 1
+      fi
+      echo "installer ${ver:-?} downloaded, sha256 matches: its upgrade now runs (it shows what changes and asks first)"
+      exec bash "$f" --upgrade "${@:2}";;
+  esac
 }
 svc(){
   case "$2" in
@@ -1903,7 +1963,11 @@ case "${1:-status}" in
      echo "The gateway's own page listens on 127.0.0.1:7152 (this server only). From your computer:"
      echo "  ssh -L 7152:127.0.0.1:7152 <you>@<this server>     then open http://127.0.0.1:7152"
      echo "Its admin pages ask for user 'admin' and this password: $(as_u cat "$GWD/datum_gateway_config.json" 2>/dev/null | jq -r .api.admin_password 2>/dev/null)";;
-  upgrade) need_root upgrade; exec bash "$INSTALLER" --upgrade "${@:2}";;
+  upgrade) need_root upgrade
+     case "${2:-}" in
+       check|[0-9a-f]*) upgrade_fetch "${@:2}";;
+       *) exec bash "$INSTALLER" --upgrade "${@:2}";;
+     esac;;
   repair) need_root repair; exec bash "$INSTALLER" --repair "${@:2}";;
   uninstall) need_root uninstall; exec bash "$INSTALLER" --uninstall "${@:2}";;
   help|-h|--help) usage;;
@@ -3842,7 +3906,17 @@ write_versions(){
     [ -z "$(gw_src)" ] || [ "$(sha_u "$GW_BIN")" != "$PIN_GW_BIN" ] || echo "gateway_built_from=$(gw_src)"
     echo "chain_start=$(kv_get "$STATE" chain_start || true)"
     echo "chain_start_height=$(kv_get "$STATE" chain_start_height || true)"
+    echo "knots_required_ver=$KNOTS_REQUIRED_VER"
+    echo "knots_required_by_height=$KNOTS_REQUIRED_BY_HEIGHT"
+    echo "installer_url=$INSTALLER_URL"
   } > "$ETC/versions"
+  knots_required_note
+}
+knots_required_note(){   # the soft-fork pin: whatever its source, the installed bitcoind must be that release in time
+  [ -n "$KNOTS_REQUIRED_VER" ] || return 0
+  local v; v=$(/usr/local/bin/bitcoind -version 2>/dev/null | head -1)
+  case "$v" in *"$KNOTS_REQUIRED_VER"*) return 0;; esac
+  warn "this bitcoind is not Bitcoin Knots $KNOTS_REQUIRED_VER, which every node must run from block $(sep "$KNOTS_REQUIRED_BY_HEIGHT") (new consensus rules). Before that block: sudo alphapool-node upgrade (AlphaPool's pin), or alphapool-node switch knots url|dir with your own build of that release"
 }
 # upgrade_result: what an upgrade that was carried out ends with. ONE place for every way an upgrade is carried out:
 # the upgrade command, an upgrade finished from its journal after it was cut short (by the upgrade command, by the
@@ -4262,6 +4336,7 @@ main(){
       printf 'start_mode=%s\nstart_label=%s\nstart_signed=%s\nstart_about=%s\nstart_default=%s\nstart_modes=%s\nstart_gone=%s\n' \
         "$([ -n "$MODE_GONE" ] || echo "$M_NAME")" "$M_LABEL" "$M_VERIFY" "$M_ABOUT" "$START_DEFAULT" "$(mode_names)" "$MODE_GONE"
       printf 'start_trust=%s\nstart_trust_zh=%s\n' "$M_TRUST" "$M_TRUST_ZH"
+      printf 'knots_required_ver=%s\nknots_required_by_height=%s\ninstaller_url=%s\n' "$KNOTS_REQUIRED_VER" "$KNOTS_REQUIRED_BY_HEIGHT" "$INSTALLER_URL"
       utxo_pick mode && printf 'utxo_height=%s\nutxo_sha256=%s\nutxo_url=%s\n' "$UX_HEIGHT" "$UX_SHA" "$UX_URL"
       exit 0;;
     upgrade) upgrade_main; exit 0;;

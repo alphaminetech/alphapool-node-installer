@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- `alphapool-node upgrade check` says whether a newer installer is published (it downloads it and runs nothing);
+  `alphapool-node upgrade <sha256>` downloads it, refuses it unless the sha256 is the one you give, then runs its
+  upgrade. Nothing updates by itself and AlphaPool cannot push one (README "Updates").
+- A release that every node must run from a given block (a soft fork) can pin `KNOTS_REQUIRED_VER` /
+  `KNOTS_REQUIRED_BY_HEIGHT`: `alphapool-node status` then shows an UPDATE line until the node runs it, the installer
+  and the upgrade warn, and the heartbeat (agent v6) reports the installed bitcoind and installer versions.
+- MIT license.
+
 ## 2026-10-09.1
 
 - Flush the complete plan before asking for confirmation; print each console step once without redrawing the login prompt. Linux console output is English only; SSH retains Chinese.
