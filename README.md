@@ -587,3 +587,7 @@ command goes on where it stopped, and `--sync network` chooses the full sync ins
 ### Watching after the installer hands over
 
 Run `sudo alphapool-node status --watch` for one progress line each minute (blocks left, measured time left and peers), until READY shows the rig address. Ctrl-C stops watching; the node keeps working. If blocks stop advancing, the watch says so and does not keep showing an old estimate. The provider login screen updates every five minutes. Linux consoles show English only; SSH output and this guide retain Chinese.
+
+## License
+
+MIT (see [LICENSE](LICENSE)).
