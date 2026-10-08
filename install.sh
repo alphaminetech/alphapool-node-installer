@@ -71,14 +71,21 @@ fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/downloa
 MODES
 }
 # utxo_table: the snapshot files, one line each:
-#   <height> <hash of the block at that height> <file name> <bytes> <sha256 of the file> <URL>
+#   <height> <hash of the block at that height> <file name> <bytes> <sha256 of the file> <URL> [<info hash> [<.torrent URL>]]
 # The file's sha256 is checked before the node sees the file; the node then checks the content itself. Lines that start
 # with # are not used. Fast starts at 976000; the signed official mode retains its 910000 snapshot.
+# Columns 7 and 8 are optional: the BitTorrent info hash of the file (40 hex; tools/make-torrent.py prints it) and the
+# URL of its .torrent file. With an info hash the download comes over BitTorrent first (other installing nodes and the
+# seeders share the load; the https URL is the fallback), and the node seeds the file for a while afterwards. The
+# .torrent file, if given, is used only when its info hash is the pinned one; without it the magnet link is built from
+# the info hash and the trackers below.
 utxo_table(){ cat <<'TABLE'
 910000 0000000000000000000108970acb9522ffd516eae17acddcb1bd16469194a821 utxo-910000.dat 9637809744 6ac0208110d6d6c0783c50ea825aae32f5229cf1dcb63ac986543e95aa0306bf https://snapshots.alphapool.tech:8444/xbt/utxo-910000.dat
-976000 000000000000000098441aee029573795681eb1602c75271e809b136e9217373 utxo-976000.dat 9517597408 bfd2460a55ae1d2e94b9957ccd512ae027855feed1dbef996cfed0abebe5d123 https://snapshots.alphapool.tech:8444/xbt/utxo-976000.dat
+976000 000000000000000098441aee029573795681eb1602c75271e809b136e9217373 utxo-976000.dat 9517597408 bfd2460a55ae1d2e94b9957ccd512ae027855feed1dbef996cfed0abebe5d123 https://snapshots.alphapool.tech:8444/xbt/utxo-976000.dat 3cf7e4d15841f116856f6f19bf2ac15b1dbae2c3
 TABLE
 }
+UTXO_TRACKERS="udp://tracker.opentrackr.org:1337/announce udp://open.stealth.si:80/announce udp://tracker.torrent.eu.org:451/announce udp://exodus.desync.com:6969/announce"
+UTXO_SEED_MINUTES=120     # after the download: seed the snapshot to other installing nodes for at most this long (share ratio 2)
 # The Bitcoin Knots pin of this run is the build of the node's start mode: mode_apply sets these four (and M_*).
 KNOTS_VER=""; KNOTS_URL=""; KNOTS_SHA256=""; KNOTS_VERIFY=""
 M_NAME=""; M_VER=""; M_URL=""; M_SHA=""; M_VERIFY=""; M_KNOWS=""; M_HEIGHT=""; M_ABOUT=""; M_LABEL=""; M_TRUST=""; M_TRUST_ZH=""
@@ -763,6 +770,9 @@ USAGE
   --utxo-url URL --utxo-sha256 HEX --utxo-bytes N --utxo-height N
                           the validated start from a UTXO snapshot file you name. Your Bitcoin Knots build must have
                           that block compiled in; the installer asks it before it downloads the file
+  --no-torrent            download the snapshot over https only (default: BitTorrent first, when the installer pins
+                          the file's info hash; https is the fallback)
+  --no-seed               do not seed the snapshot to other installing nodes after the download (default: up to 2 h)
 
 Behaviour
   --yes                   do not ask questions
@@ -805,7 +815,7 @@ mode_help(){   # the start modes of this installer, for --help (in a subshell: t
 }
 A_ADDRESS=""; A_TAG=""; A_TAG_SET=0; A_NODE_ID=""; A_TOKEN=""; A_TOKEN_FILE=""; A_NO_HB=0
 A_STRATUM=""; A_ALIAS=""; A_ALIAS_SET=0; A_PUBLIC=""; A_SYNC=""; A_SNAP_MIRROR=""; A_START=""
-A_UTXO_URL=""; A_UTXO_SHA=""; A_UTXO_BYTES=""; A_UTXO_HEIGHT=""
+A_UTXO_URL=""; A_UTXO_SHA=""; A_UTXO_BYTES=""; A_UTXO_HEIGHT=""; A_NO_TORRENT=0; A_NO_SEED=0
 A_GW=""; A_GW_FILE=""; A_GW_URL=""; A_GW_SHA=""; A_GW_GIT=""; A_GW_COMMIT=""
 A_KN=""; A_KN_URL=""; A_KN_SHA=""; A_KN_DIR=""
 A_SSH_PORTS=""; A_FIREWALL=""; A_PORTCHECK=""; YES=0; FOLLOW=1; FOREGROUND=0; KEEP_CHAIN=0; RESUMED=0
@@ -832,6 +842,7 @@ parse_args(){
       --stratum-port) A_STRATUM=$v;;       --alias-ports) A_ALIAS=$v; A_ALIAS_SET=1;;
       --public-host) A_PUBLIC=$v;;         --sync) A_SYNC=$v;;
       --snapshot-url) A_SNAP_MIRROR=$v;;   --start) A_START=$v;;
+      --no-torrent) A_NO_TORRENT=1;;       --no-seed) A_NO_SEED=1;;
       --utxo-url) A_UTXO_URL=$v;;          --utxo-sha256) A_UTXO_SHA=$v;;
       --utxo-bytes) A_UTXO_BYTES=$v;;      --utxo-height) A_UTXO_HEIGHT=$v;;
       --gateway) A_GW=$v;;                 --gateway-file) A_GW_FILE=$v;;
@@ -859,6 +870,7 @@ parse_args(){
 # ==== settings: flags over the saved node.conf, all validated ==========================================================
 ADDRESS=""; TAG=""; STRATUM_PORT=23334; ALIAS_PORTS=""; PUBLIC_HOST=""; SYNC_MODE=assumeutxo
 UTXO_URL=""; UTXO_SHA256=""; UTXO_BYTES=""; UTXO_HEIGHT=""     # a UTXO snapshot of your own (--utxo-*); empty = the installer's table
+UTXO_TORRENT=on; UTXO_SEED=on                                   # the snapshot over BitTorrent first; seed it afterwards
 SAVED_SYNC=""                                                  # what node.conf said before this run
 FIREWALL=on; PORT_CHECK=on; HEARTBEAT=off; NODE_ID=""; TOKEN=""
 load_settings(){
@@ -876,6 +888,8 @@ load_settings(){
   v=$(kv_get "$CONF" HEARTBEAT) && HEARTBEAT=$v
   v=$(kv_get "$CONF" NODE_ID) && NODE_ID=$v
   v=$(kv_get "$CONF" UTXO_URL) && UTXO_URL=$v
+  v=$(kv_get "$CONF" UTXO_TORRENT) && UTXO_TORRENT=$v
+  v=$(kv_get "$CONF" UTXO_SEED) && UTXO_SEED=$v
   v=$(kv_get "$CONF" UTXO_SHA256) && UTXO_SHA256=$v
   v=$(kv_get "$CONF" UTXO_BYTES) && UTXO_BYTES=$v
   v=$(kv_get "$CONF" UTXO_HEIGHT) && UTXO_HEIGHT=$v
@@ -892,6 +906,8 @@ apply_flags(){
   [ -n "$A_FIREWALL" ] && FIREWALL=$A_FIREWALL
   [ -n "$A_PORTCHECK" ] && PORT_CHECK=$A_PORTCHECK
   [ -n "$A_UTXO_URL" ] && UTXO_URL=$A_UTXO_URL
+  [ "$A_NO_TORRENT" = 1 ] && UTXO_TORRENT=off
+  [ "$A_NO_SEED" = 1 ] && UTXO_SEED=off
   [ -n "$A_UTXO_SHA" ] && UTXO_SHA256=$A_UTXO_SHA
   [ -n "$A_UTXO_BYTES" ] && UTXO_BYTES=$A_UTXO_BYTES
   [ -n "$A_UTXO_HEIGHT" ] && UTXO_HEIGHT=$A_UTXO_HEIGHT
@@ -954,6 +970,8 @@ validate_choices(){   # how the node gets its chain, and which software: the sam
   elif [ -n "$UTXO_HEIGHT" ]; then
     [[ $UTXO_HEIGHT =~ ^[1-9][0-9]{0,8}$ ]] || die AP-105 "--utxo-height must be a block height"
   fi
+  case "$UTXO_TORRENT" in on|off) ;; *) UTXO_TORRENT=on;; esac
+  case "$UTXO_SEED" in on|off) ;; *) UTXO_SEED=on;; esac
   [ -z "$A_UTXO_URL$A_UTXO_SHA$A_UTXO_BYTES$A_UTXO_HEIGHT" ] || [ "$SYNC_MODE" = assumeutxo ] || die AP-105 "the --utxo-* options go with --sync assumeutxo (the validated start)"
   # software choices: at most one per component
   local n=0
@@ -1246,6 +1264,7 @@ save_settings(){
   kv_set "$CONF" FIREWALL "$FIREWALL"; kv_set "$CONF" PORT_CHECK "$PORT_CHECK"
   kv_set "$CONF" HEARTBEAT "$HEARTBEAT"; kv_set "$CONF" NODE_ID "$NODE_ID"; kv_set "$CONF" SSH_PORTS "$SSH_PORTS"
   kv_set "$CONF" UTXO_URL "$UTXO_URL"; kv_set "$CONF" UTXO_SHA256 "$UTXO_SHA256"       # empty unless you named a snapshot of your own
+  kv_set "$CONF" UTXO_TORRENT "$UTXO_TORRENT"; kv_set "$CONF" UTXO_SEED "$UTXO_SEED"
   kv_set "$CONF" UTXO_BYTES "$UTXO_BYTES"; kv_set "$CONF" UTXO_HEIGHT "$UTXO_HEIGHT"
   if [ "$HEARTBEAT" = on ]; then (umask 077; printf '%s\n' "$TOKEN" > "$TOKEN_FILE.new" && mv -f "$TOKEN_FILE.new" "$TOKEN_FILE"); chmod 0600 "$TOKEN_FILE"
   else rm -f "$TOKEN_FILE"; fi
@@ -2527,9 +2546,10 @@ gw_compat_note(){
 # there the install is not complete: a re-run, and the resume unit after a reboot, continue it. If anything fails, the
 # node is STOPPED: a node left running without its snapshot would sync the whole chain from the network, for days,
 # without telling anyone.
-UX_BUILD=""; UX_HEIGHT=""; UX_BASE=""; UX_FILE=""; UX_BYTES=""; UX_SHA=""; UX_URL=""; UX_FROM=""
+UX_BUILD=""; UX_HEIGHT=""; UX_BASE=""; UX_FILE=""; UX_BYTES=""; UX_SHA=""; UX_URL=""; UX_FROM=""; UX_IH=""; UX_TURL=""
 knots_version(){ /usr/local/bin/bitcoind -version 2>/dev/null | head -1 | sed -E 's/^.* version v?//'; }
 utxo_line_ok(){ [[ $1 =~ ^[1-9][0-9]{0,8}$ ]] && sha_ok "$2" && [[ $3 =~ ^[A-Za-z0-9._-]+$ ]] && [[ $4 =~ ^[1-9][0-9]{0,14}$ ]] && sha_ok "$5" && url_ok "$6"; }
+utxo_extra_ok(){ { [ -z "${1:-}" ] || [[ $1 =~ ^[0-9a-f]{40}$ ]]; } && { [ -z "${2:-}" ] || url_ok "$2"; }; }   # columns 7 and 8, both optional
 # utxo_pick HOW -> UX_* (1 = there is no snapshot). HOW is "mode" when the node runs, or gets in this run, the build of
 # its start mode, and "ask" for a build of your own. In this order:
 #   1. the snapshot you named (--utxo-url with its three values);
@@ -2541,7 +2561,7 @@ utxo_line_ok(){ [[ $1 =~ ^[1-9][0-9]{0,8}$ ]] && sha_ok "$2" && [[ $3 =~ ^[A-Za-
 UX_ASKED=""
 utxo_pick(){
   local how=${1:-mode} want h b f n k u rc first="" heights=""
-  UX_HEIGHT=""; UX_BASE=""; UX_FILE=""; UX_BYTES=""; UX_SHA=""; UX_URL=""; UX_FROM=""; UX_ASKED=""
+  UX_HEIGHT=""; UX_BASE=""; UX_FILE=""; UX_BYTES=""; UX_SHA=""; UX_URL=""; UX_FROM=""; UX_ASKED=""; UX_IH=""; UX_TURL=""
   if [ -n "$UTXO_URL" ]; then
     UX_HEIGHT=$UTXO_HEIGHT; UX_FILE=utxo-$UTXO_HEIGHT.dat; UX_BYTES=$UTXO_BYTES; UX_SHA=$UTXO_SHA256; UX_URL=$UTXO_URL; UX_FROM=yours
     return 0
@@ -2549,19 +2569,21 @@ utxo_pick(){
   want=$UTXO_HEIGHT
   [ -n "$want" ] || [ "$how" != mode ] || want=$M_HEIGHT
   if [ -n "$want" ]; then
-    while read -r h b f n k u _; do
+    while read -r h b f n k u ih tu _; do
       [ "$h" = "$want" ] && utxo_line_ok "$h" "$b" "$f" "$n" "$k" "$u" || continue
       UX_HEIGHT=$h; UX_BASE=$b; UX_FILE=$f; UX_BYTES=$n; UX_SHA=$k; UX_URL=$u; UX_FROM=table
+      utxo_extra_ok "${ih:-}" "${tu:-}" && { UX_IH=${ih:-}; UX_TURL=${tu:-}; }
       return 0
     done < <(utxo_table)
     return 1
   fi
-  while read -r h b f n k u _; do
+  while read -r h b f n k u ih tu _; do
     utxo_line_ok "$h" "$b" "$f" "$n" "$k" "$u" || continue
     knots_knows /usr/local/bin "$b"; rc=$?
     [ -n "$KN_HEIGHTS" ] && heights=$KN_HEIGHTS
     if [ $rc -eq 0 ] || { [ $rc -eq 2 ] && [ -z "$first" ]; }; then
       UX_HEIGHT=$h; UX_BASE=$b; UX_FILE=$f; UX_BYTES=$n; UX_SHA=$k; UX_URL=$u; UX_FROM=table
+      utxo_extra_ok "${ih:-}" "${tu:-}" && { UX_IH=${ih:-}; UX_TURL=${tu:-}; }
       [ $rc -eq 0 ] && { UX_ASKED=yes; return 0; }
       first=$h; UX_ASKED=no
     fi
@@ -2582,8 +2604,8 @@ uj_drop(){   # you chose another way: an unfinished validated start is dropped, 
   rm -f "$UJ"
 }
 uj_write(){
-  ( umask 077; printf 'format=1\nstarted=%s\nbuild=%s\nheight=%s\nbase=%s\nfile=%s\nbytes=%s\nsha256=%s\nurl=%s\nfrom=%s\n' \
-      "$(date -u +%FT%TZ)" "$UX_BUILD" "$UX_HEIGHT" "$UX_BASE" "$UX_FILE" "$UX_BYTES" "$UX_SHA" "$UX_URL" "$UX_FROM" > "$UJ.new" ) \
+  ( umask 077; printf 'format=1\nstarted=%s\nbuild=%s\nheight=%s\nbase=%s\nfile=%s\nbytes=%s\nsha256=%s\nurl=%s\nfrom=%s\ninfohash=%s\ntorrent=%s\n' \
+      "$(date -u +%FT%TZ)" "$UX_BUILD" "$UX_HEIGHT" "$UX_BASE" "$UX_FILE" "$UX_BYTES" "$UX_SHA" "$UX_URL" "$UX_FROM" "$UX_IH" "$UX_TURL" > "$UJ.new" ) \
     && mv -f "$UJ.new" "$UJ" || die AP-503 "the journal of the validated start could not be written (is the disk full?)"
   sync "$UJ" "$ETC" 2>/dev/null; return 0
 }
@@ -2591,6 +2613,8 @@ uj_load(){
   UX_BUILD=$(kv_get "$UJ" build || true); UX_HEIGHT=$(kv_get "$UJ" height || true); UX_BASE=$(kv_get "$UJ" base || true)
   UX_FILE=$(kv_get "$UJ" file || true); UX_BYTES=$(kv_get "$UJ" bytes || true); UX_SHA=$(kv_get "$UJ" sha256 || true)
   UX_URL=$(kv_get "$UJ" url || true); UX_FROM=$(kv_get "$UJ" from || true)
+  UX_IH=$(kv_get "$UJ" infohash || true); UX_TURL=$(kv_get "$UJ" torrent || true)
+  utxo_extra_ok "$UX_IH" "$UX_TURL" || { UX_IH=""; UX_TURL=""; }
   [[ $UX_HEIGHT =~ ^[1-9][0-9]{0,8}$ ]] && [[ $UX_FILE =~ ^[A-Za-z0-9._-]+$ ]] && [[ $UX_BYTES =~ ^[1-9][0-9]{0,14}$ ]] && sha_ok "$UX_SHA" && url_ok "$UX_URL" \
     || die AP-503 "the journal of the validated start ($UJ) is damaged. Remove it and run the same command again."
 }
@@ -2744,11 +2768,18 @@ utxo_file_ready(){   # the snapshot file is in the work area, complete, with the
     say "  the UTXO snapshot is downloaded and checked"; return 0
   fi
   plain_own "$f" && got=$(on_disk "$f")
+  plain_own "$f.bt" && got=$(( got + $(on_disk "$f.bt") ))
   need_dl=$(( UX_BYTES - got )); [ "$need_dl" -ge 0 ] || need_dl=0
   space_for "$need_dl" $(( 30 * 1000**3 )) || die AP-206 "only $(gb "$SP_AVAIL") GB free$SP_WHERE; the validated start needs $(gb "$SP_NEED") GB (the snapshot file, the chain state it becomes, and room for blocks)"
-  say_t "  downloading the UTXO snapshot ($(gb "$UX_BYTES") GB) from ${UX_URL#https://}"
+  if utxo_torrent_on; then say_t "  downloading the UTXO snapshot ($(gb "$UX_BYTES") GB): BitTorrent first, ${UX_URL#https://} as the fallback"
+  else say_t "  downloading the UTXO snapshot ($(gb "$UX_BYTES") GB) from ${UX_URL#https://}"; fi
   rstate downloading "$got" "$UX_BYTES"
-  fetch_big "$UX_URL" "$f" "$UX_BYTES" "UTXO snapshot"; frc=$?
+  frc=1
+  if utxo_torrent_on; then utxo_torrent_download "$f" && frc=0; fi
+  if [ $frc -ne 0 ]; then
+    ! utxo_torrent_on || say "  downloading over https from ${UX_URL#https://}"
+    fetch_big "$UX_URL" "$f" "$UX_BYTES" "UTXO snapshot"; frc=$?
+  fi
   [ $frc -eq 3 ] && die AP-307 "the download server had no free download slot for $(( SLOT_WAITED / 3600 )) hours. Run the same command again later: the download resumes where it stopped."
   [ $frc -eq 0 ] || die AP-306 "the UTXO snapshot download did not finish (network trouble). Run the same command again: the download resumes where it stopped."
   say_t "  downloaded; checking the file's sha256 (about a minute)"
@@ -2760,6 +2791,76 @@ utxo_file_ready(){   # the snapshot file is in the work area, complete, with the
   utxo_check_header "$f"
   kv_set "$UJ" verified "$UX_SHA"
   say_t "  sha256 matches$([ "$UX_FROM" = table ] && echo ' the pin'); the file is the snapshot of block $(sep "$UX_HEIGHT")"
+  utxo_seed_start "$f"
+}
+# ---- the snapshot over BitTorrent -----------------------------------------------------------------------------------------
+# Other installing nodes and the seeders share the load, and a busy https server costs nothing. The pinned info hash is
+# the check: aria2 takes no piece whose hash is not in the metadata the info hash names, and the sha256 check follows
+# as before. The https download stays the fallback: no download speed for 15 minutes ends the torrent attempt.
+utxo_torrent_on(){ [ "$UTXO_TORRENT" = on ] && [ -n "$UX_IH" ] && ! is_dry; }
+# utxo_torrent_download FILE: BitTorrent (aria2) into FILE. The source is the pinned .torrent file (fetched, and used only
+# if its info hash is the pinned one) or the magnet link made of the pinned info hash and the pinned trackers. The pieces
+# land in FILE.bt (a torrent's partial file is sparse: https must never "resume" it); a re-run resumes it with aria2
+# re-checking the pieces on disk; giving up deletes it. The metadata is saved next to it (<info hash>.torrent) for the
+# seeding. An https download that was started earlier (FILE.aria2) is left to https. 0 = complete, 1 = give up.
+utxo_torrent_download(){
+  local f=$1 dir name part src="" t rc stop=${AP_TORRENT_STOP_S:-900} tr="" x
+  dir=$(dirname "$f"); name=$(basename "$f").bt; part=$f.bt
+  [ ! -e "$f.aria2" ] || return 1
+  t=$dir/$UX_IH.torrent
+  for x in $UTXO_TRACKERS; do tr="$tr&tr=$(printf '%s' "$x" | sed 's/:/%3A/g; s#/#%2F#g')"; done
+  if [ -n "$UX_TURL" ]; then
+    if new_file "$t" && curl -fsSL --retry 3 --connect-timeout 20 --max-time 120 --max-filesize 4000000 -o "$t" "$UX_TURL" 2>/dev/null \
+       && [ "$(aria2c -S "$t" 2>/dev/null | sed -n 's/^Info Hash: *//p' | head -1)" = "$UX_IH" ]; then src=$t
+    else rm -f -- "$t"; say "  the .torrent file could not be fetched, or it is not the pinned one: the magnet link is used instead"; fi
+  fi
+  [ -n "$src" ] || src="magnet:?xt=urn:btih:$UX_IH&dn=$UX_FILE$tr"
+  say "  BitTorrent: other installing nodes and the seeders share the load (no download speed for $(( stop / 60 )) min ends this attempt)"
+  progress_loop "$part" "$UX_BYTES" "UTXO snapshot (torrent)" & BG_PID=$!
+  aria2c -q -c -d "$dir" --index-out="1=$name" --check-integrity=true --file-allocation=none --seed-time=0 \
+    --bt-save-metadata=true --bt-stop-timeout="$stop" --bt-max-peers=60 --listen-port=6881-6889 --dht-listen-port=6881-6889 \
+    --enable-dht=true --bt-enable-lpd=false --bt-tracker-connect-timeout=20 --bt-tracker-timeout=30 \
+    --max-tries=0 --retry-wait=10 --connect-timeout=20 --timeout=60 --console-log-level=error --summary-interval=0 "$src"; rc=$?
+  kill "$BG_PID" 2>/dev/null; wait "$BG_PID" 2>/dev/null; BG_PID=""
+  if [ ! -e "$part" ] && [ -e "$f.aria2" ]; then rm -f -- "$f" "$f.aria2"; fi      # aria2 ignored --index-out: no sparse file for https
+  if [ $rc -ne 0 ]; then say "  the torrent download stopped (aria2 exit $rc)"; rm -f -- "$part" "$part.aria2"; return 1; fi
+  [ "$(stat -c %s "$part" 2>/dev/null)" = "$UX_BYTES" ] || { rm -f -- "$part" "$part.aria2"; return 1; }
+  rm -f -- "$part.aria2"; mv -T -f -- "$part" "$f"
+  return 0
+}
+# utxo_seed_start FILE: seed the checked snapshot to other installing nodes for a while (at most UTXO_SEED_MINUTES, or
+# share ratio 2) as the transient service alphapool-snapshot-seed. The seeder keeps FILE open, so the node's load, which
+# moves and then deletes the file, does not stop it; the space is freed when it ends. If ufw is on, TCP 6881 is allowed
+# meanwhile and removed after. Off: --no-seed. Stop early: systemctl stop alphapool-snapshot-seed
+utxo_seed_start(){
+  local f=$1 t sd=$VAR/seed
+  [ "$UTXO_SEED" = on ] && utxo_torrent_on || return 0
+  t=$(dirname "$f")/$UX_IH.torrent
+  [ -s "$t" ] || return 0                                    # (no metadata was saved: nothing to seed from)
+  priv_dir "$sd" || { warn "$sd is there already, but not as a directory of root's alone: the snapshot is not seeded"; return 0; }
+  cp -f -- "$t" "$sd/$UX_IH.torrent" || return 0
+  cat > "$LIB/snapshot-seed.new" <<'EOS'
+#!/bin/bash
+# Seeds the UTXO snapshot this node downloaded to other installing nodes (BitTorrent), for at most MINUTES or until
+# share ratio 2. Started by the installer as the transient service alphapool-snapshot-seed; stop: systemctl stop alphapool-snapshot-seed
+set -u
+f=$1 t=$2 mins=${3:-120} rule=0
+if ufw status 2>/dev/null | head -1 | grep -q 'Status: active'; then
+  ufw allow 6881:6889/tcp comment "AlphaPool node: snapshot seeding (temporary)" >/dev/null 2>&1 && rule=1
+fi
+finish(){ [ "$rule" = 1 ] && ufw delete allow 6881:6889/tcp >/dev/null 2>&1; rm -f -- "$t"; }
+trap finish EXIT
+# aria2 gives up when it cannot bind its listen port: it gets a range and takes the first free one
+aria2c -q -d "$(dirname "$f")" --index-out="1=$(basename "$f")" --check-integrity=true --file-allocation=none \
+  --seed-ratio=2.0 --seed-time="$mins" --listen-port=6881-6889 --dht-listen-port=6881-6889 --enable-dht=true --bt-enable-lpd=false \
+  --bt-max-peers=80 --console-log-level=error --summary-interval=0 "$t"
+EOS
+  chmod 0755 "$LIB/snapshot-seed.new" && mv -f "$LIB/snapshot-seed.new" "$LIB/snapshot-seed"
+  systemctl stop alphapool-snapshot-seed.service >/dev/null 2>&1
+  if systemd-run --unit=alphapool-snapshot-seed --description="Seed the UTXO snapshot to other installing nodes (temporary)" --collect --quiet \
+       "$LIB/snapshot-seed" "$f" "$sd/$UX_IH.torrent" "$UTXO_SEED_MINUTES"; then
+    say "  seeding the snapshot to other installing nodes for up to $UTXO_SEED_MINUTES min (off: --no-seed; stop: systemctl stop alphapool-snapshot-seed)"
+  else warn "the seeding could not be started (systemd-run)"; rm -f -- "$sd/$UX_IH.torrent"; fi
 }
 utxo_prepare(){   # step 5 of a validated start
   local build how=ask
@@ -4199,12 +4300,12 @@ uninstall_main(){
            knots-node.service datum-port-aliases.service alphapool-install-resume.service alphapool-swap.service; do
     run systemctl disable --now "$u" >/dev/null 2>&1
   done
-  is_dry || systemctl stop "$INSTALL_UNIT" >/dev/null 2>&1
+  is_dry || systemctl stop "$INSTALL_UNIT" alphapool-snapshot-seed.service >/dev/null 2>&1
   [ -x "$LIB/port-aliases" ] && run "$LIB/port-aliases" delete
   rules=$(kv_get "$STATE" ufw_rules 2>/dev/null || true)
   if [ -n "$rules" ] && { is_dry || command -v ufw >/dev/null 2>&1; }; then
     strat=$(printf '%s' "$rules" | cut -d'|' -f2); al=$(printf '%s' "$rules" | cut -d'|' -f3)
-    for p in $strat $al 8333; do run ufw delete allow "$p/tcp" >/dev/null 2>&1; done   # never the SSH rule
+    for p in $strat $al 8333 6881:6889; do run ufw delete allow "$p/tcp" >/dev/null 2>&1; done   # never the SSH rule
     if [ "$(kv_get "$STATE" ufw_enabled_by_installer || true)" = 1 ]; then
       run ufw --force disable >/dev/null 2>&1; echo "ufw: turned off again (it was off before the install)"
     else echo "ufw: the node's rules removed; your SSH rule and your other rules are untouched"; fi
@@ -4217,7 +4318,7 @@ uninstall_main(){
   run systemctl daemon-reload
   rm -f /usr/local/bin/bitcoind /usr/local/bin/bitcoin-cli "$CLI_BIN" /etc/needrestart/conf.d/alphapool.conf \
         /etc/issue.d/alphapool.issue /etc/issue.d/alphapool-build.issue /var/lib/alphapool-swapfile
-  rm -rf "$LIB" "$DL" "$TMPD" "$HAND" "$RUN" "$ETC"          # (the log directory in $VAR stays)
+  rm -rf "$LIB" "$DL" "$TMPD" "$VAR/seed" "$HAND" "$RUN" "$ETC"          # (the log directory in $VAR stays)
   if [ -d "$OLD_DL" ] && [ ! -L "$OLD_DL" ] && [ "$(stat -c %u -- "$OLD_DL")" = 0 ]; then rm -rf -- "$OLD_DL"; fi
   # The node user's folders are emptied by a process of the node user; root removes only what is root's: the user
   # itself and its then empty home folder (an entry of /home, which is root's).
@@ -4252,6 +4353,8 @@ print_cloud_init(){
   [ -n "$A_SYNC" ] && args="$args --sync $A_SYNC"
   [ -n "$A_UTXO_URL" ] && args="$args --utxo-url $(sq "$A_UTXO_URL") --utxo-sha256 $A_UTXO_SHA --utxo-bytes $A_UTXO_BYTES"
   [ -n "$A_UTXO_HEIGHT" ] && args="$args --utxo-height $A_UTXO_HEIGHT"
+  [ "$A_NO_TORRENT" = 1 ] && args="$args --no-torrent"
+  [ "$A_NO_SEED" = 1 ] && args="$args --no-seed"
   [ -n "$A_KN" ] && args="$args --knots $A_KN"
   [ -n "$A_KN_URL" ] && args="$args --knots-url $(sq "$A_KN_URL")${A_KN_SHA:+ --knots-sha256 $A_KN_SHA}"
   [ -n "$A_GW" ] && args="$args --gateway $A_GW"

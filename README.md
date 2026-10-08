@@ -133,7 +133,7 @@ where they are** until then.
 - `alphapool-node status` never waits for a busy node: each question to the node is given 4 seconds, and after the
   first one that gets no answer it shows the figures of the last measurement instead.
 
-**Waiting for a download slot.**
+**Waiting for a download slot.** (The https download only: the torrent needs no slot.)
 
 - AlphaPool's download server admits a limited number of snapshot downloads at a time. When every slot is taken, it
   answers "busy" (HTTP 503) or refuses the connection.
@@ -197,6 +197,15 @@ table in the installer; `--help` lists them, each with one sentence that says wh
 
 What the installer does around it:
 
+- **The download comes over BitTorrent first**, when the installer pins the file's info hash (the table in the
+  script; `tools/make-torrent.py` prints it): other installing nodes and the seeders share the load, and the pinned
+  info hash is the check on every piece. The https URL is the fallback: no download speed for 15 minutes ends the
+  torrent attempt and the https download takes over (resumable, with the slot waits below). `--no-torrent` is https
+  only.
+- After the download and the checks, the node **seeds** the snapshot to other installing nodes for up to 2 hours or
+  share ratio 2 (the transient service `alphapool-snapshot-seed`; if ufw is on, TCP 6881-6889 is allowed meanwhile
+  and removed after). `--no-seed` turns this off; `systemctl stop alphapool-snapshot-seed` stops it early. The node's
+  own load of the file is not delayed by it.
 - Before the 9.6 GB are downloaded, the installed Bitcoin Knots is **asked** whether it knows the snapshot. It runs
   for a moment on an empty scratch folder, with no network; nothing of your node is touched. A build that does not
   know the block is refused there (AP-411), with the heights it does know.
@@ -227,6 +236,14 @@ What the installer does around it:
 AlphaPool's pre-synced copy of a node's chain folders, the start of installer versions before 2026-10-08.1, is not
 offered any more (`--sync snapshot` stops with AP-105): a node validates its chain itself. This installer never
 replaces chain data that is already on a server.
+
+**Publishing a snapshot (for the maintainer).** A UTXO snapshot file is reproducible: on a synced node of a build
+that has the height compiled in, `bitcoin-cli -named dumptxoutset path=utxo-N.dat rollback=N` gives the same bytes
+on every node. Then `python3 tools/make-torrent.py utxo-N.dat --out utxo-N.dat.torrent --webseed https://.../utxo-N.dat`
+prints the file's sha256, its info hash and a magnet link. The table line gets the info hash (column 7) and, if the
+.torrent is published next to the file, its URL (column 8). The web seed inside the .torrent lets a node without
+peers complete over https within the same download. A seeder that stays (a small VPS running `aria2c --seed-ratio=0
+--seed-time=0 ... utxo-N.dat.torrent` next to the file) keeps the swarm alive between installs.
 
 ## Every day: `alphapool-node`
 
@@ -322,6 +339,9 @@ Turn it off at any time with `alphapool-node heartbeat off`, or with `systemctl 
 - Every file AlphaPool's defaults download is pinned in the script (https URL + sha256) and checked before it is used.
   The pins live in the script, never on the download host.
 - The gateway archive is checked before anything is read from it: no links, devices, absolute paths or `..`.
+- The snapshot over BitTorrent: every piece is checked against the metadata the pinned info hash names (a .torrent
+  file is used only if its info hash is the pinned one); then the file's sha256 and header, as for https. The seeding
+  afterwards reads the file and writes nothing.
 - Downloads, files while they are checked, and the installer's logs are kept in `/var/lib/alphapool`, a directory
   only root can enter. The installer makes it. If the path is there already, it must be a real directory that belongs
   to root and that nobody else can write to; otherwise the installer stops (AP-211). Nothing is put in `/tmp`,
