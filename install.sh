@@ -80,7 +80,7 @@ MODES
 # .torrent file, if given, is used only when its info hash is the pinned one; without it the magnet link is built from
 # the info hash and the trackers below.
 utxo_table(){ cat <<'TABLE'
-910000 0000000000000000000108970acb9522ffd516eae17acddcb1bd16469194a821 utxo-910000.dat 9637809744 6ac0208110d6d6c0783c50ea825aae32f5229cf1dcb63ac986543e95aa0306bf https://snapshots.alphapool.tech:8444/xbt/utxo-910000.dat
+910000 0000000000000000000108970acb9522ffd516eae17acddcb1bd16469194a821 utxo-910000.dat 9637809744 6ac0208110d6d6c0783c50ea825aae32f5229cf1dcb63ac986543e95aa0306bf https://snapshots.alphapool.tech:8444/xbt/utxo-910000.dat e1fb935bdbc0429c8c2521cb81d6c8f42ff26f8b
 976000 000000000000000098441aee029573795681eb1602c75271e809b136e9217373 utxo-976000.dat 9517597408 bfd2460a55ae1d2e94b9957ccd512ae027855feed1dbef996cfed0abebe5d123 https://snapshots.alphapool.tech:8444/xbt/utxo-976000.dat 3cf7e4d15841f116856f6f19bf2ac15b1dbae2c3
 TABLE
 }
