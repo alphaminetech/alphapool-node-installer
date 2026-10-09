@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+- `alphapool-node upgrade check` says whether a newer installer is published (it downloads it and runs nothing);
+  `alphapool-node upgrade <sha256>` downloads it, refuses it unless the sha256 is the one you give, then runs its
+  upgrade. Nothing updates by itself and AlphaPool cannot push one (README "Updates").
+- A release that every node must run from a given block (a soft fork) can pin `KNOTS_REQUIRED_VER` /
+  `KNOTS_REQUIRED_BY_HEIGHT`: `alphapool-node status` then shows an UPDATE line until the node runs it, the installer
+  and the upgrade warn, and the heartbeat (agent v6) reports the installed bitcoind and installer versions.
+- MIT license.
+- The UTXO snapshot comes over BitTorrent first when the installer pins its info hash (two optional columns in the
+  snapshot table; `tools/make-torrent.py` prints them): other installing nodes and the seeders share the load, the
+  https download is the fallback (`--no-torrent`: https only). After the download the node seeds the file to other
+  installing nodes for up to 2 hours (`--no-seed`). No info hash is pinned for the 910,000 file yet: until then
+  nothing changes for a default install.
+
 ## 2026-10-09.1
 
 - Flush the complete plan before asking for confirmation; print each console step once without redrawing the login prompt. Linux console output is English only; SSH retains Chinese.

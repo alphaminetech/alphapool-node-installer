@@ -133,7 +133,7 @@ where they are** until then.
 - `alphapool-node status` never waits for a busy node: each question to the node is given 4 seconds, and after the
   first one that gets no answer it shows the figures of the last measurement instead.
 
-**Waiting for a download slot.**
+**Waiting for a download slot.** (The https download only: the torrent needs no slot.)
 
 - AlphaPool's download server admits a limited number of snapshot downloads at a time. When every slot is taken, it
   answers "busy" (HTTP 503) or refuses the connection.
@@ -197,6 +197,15 @@ table in the installer; `--help` lists them, each with one sentence that says wh
 
 What the installer does around it:
 
+- **The download comes over BitTorrent first**, when the installer pins the file's info hash (the table in the
+  script; `tools/make-torrent.py` prints it): other installing nodes and the seeders share the load, and the pinned
+  info hash is the check on every piece. The https URL is the fallback: no download speed for 15 minutes ends the
+  torrent attempt and the https download takes over (resumable, with the slot waits below). `--no-torrent` is https
+  only.
+- After the download and the checks, the node **seeds** the snapshot to other installing nodes for up to 2 hours or
+  share ratio 2 (the transient service `alphapool-snapshot-seed`; if ufw is on, TCP 6881-6889 is allowed meanwhile
+  and removed after). `--no-seed` turns this off; `systemctl stop alphapool-snapshot-seed` stops it early. The node's
+  own load of the file is not delayed by it.
 - Before the 9.6 GB are downloaded, the installed Bitcoin Knots is **asked** whether it knows the snapshot. It runs
   for a moment on an empty scratch folder, with no network; nothing of your node is touched. A build that does not
   know the block is refused there (AP-411), with the heights it does know.
@@ -228,6 +237,14 @@ AlphaPool's pre-synced copy of a node's chain folders, the start of installer ve
 offered any more (`--sync snapshot` stops with AP-105): a node validates its chain itself. This installer never
 replaces chain data that is already on a server.
 
+**Publishing a snapshot (for the maintainer).** A UTXO snapshot file is reproducible: on a synced node of a build
+that has the height compiled in, `bitcoin-cli -named dumptxoutset path=utxo-N.dat rollback=N` gives the same bytes
+on every node. Then `python3 tools/make-torrent.py utxo-N.dat --out utxo-N.dat.torrent --webseed https://.../utxo-N.dat`
+prints the file's sha256, its info hash and a magnet link. The table line gets the info hash (column 7) and, if the
+.torrent is published next to the file, its URL (column 8). The web seed inside the .torrent lets a node without
+peers complete over https within the same download. A seeder that stays (a small VPS running `aria2c --seed-ratio=0
+--seed-time=0 ... utxo-N.dat.torrent` next to the file) keeps the swarm alive between installs.
+
 ## Every day: `alphapool-node`
 
 ```
@@ -238,6 +255,7 @@ alphapool-node disable | enable             keep everything off across reboots /
 alphapool-node heartbeat off | on <id> | status
 alphapool-node switch gateway alphapool | file PATH | url URL SHA256 | git REPO_URL COMMIT
 alphapool-node switch knots alphapool | url URL [SHA256] | dir PATH
+alphapool-node upgrade check | <sha256> [--yes]   is a newer installer published? / download it (sha256-checked) and upgrade
 alphapool-node upgrade [--yes] [--knots alphapool] [--gateway alphapool]   to the installer's pinned versions, in place
 alphapool-node set address <payout address> | set tag "<block name>"
 alphapool-node gateway-page                 how to open the gateway's own page through SSH
@@ -268,7 +286,9 @@ unprivileged node user sends this to `https://xbt.alphapool.tech/api/node/heartb
 - the number of connected rigs;
 - whether the live job pays AlphaPool;
 - the stratum host:port;
-- the sha256 of the running gateway binary.
+- the sha256 of the running gateway binary;
+- the version line of the installed bitcoind and the installer's version (so the dashboard can show who still has to
+  update before a soft fork).
 
 It is status only. It never sends RPC credentials, the gateway admin password, keys, config files or rig passwords.
 The reply is thrown away: nothing AlphaPool sends back is read or run. The token reaches the agent through systemd
@@ -300,6 +320,16 @@ Turn it off at any time with `alphapool-node heartbeat off`, or with `systemctl 
 
 **Updates.**
 
+- Nothing updates by itself, and AlphaPool has no way to push one. You check, and you run it:
+  - `alphapool-node upgrade check` downloads the published installer, prints its version and sha256 next to the
+    installed one, and runs nothing.
+  - `alphapool-node upgrade <sha256>` downloads it again and refuses it unless its sha256 is the one you give, from
+    your dashboard ("My node") or the [CHANGELOG](CHANGELOG.md): the same check the first install made. It then runs
+    that installer's upgrade (see "Upgrade"), which shows what changes and asks first.
+- A release that every node must run from a given block (a soft fork: new consensus rules) carries that version and
+  block in the script (`KNOTS_REQUIRED_VER`, `KNOTS_REQUIRED_BY_HEIGHT`). From then on `alphapool-node status` shows
+  an `UPDATE` line until this node runs it, the installer and the upgrade warn, and the heartbeat reports the
+  installed versions.
 - It does not turn off your server's own security updates: nobody else patches your server.
 - It tells `needrestart` never to restart the node or the gateway by itself, so a library update never bounces your
   rigs. Restart them when it suits you: `alphapool-node restart`.
@@ -309,6 +339,9 @@ Turn it off at any time with `alphapool-node heartbeat off`, or with `systemctl 
 - Every file AlphaPool's defaults download is pinned in the script (https URL + sha256) and checked before it is used.
   The pins live in the script, never on the download host.
 - The gateway archive is checked before anything is read from it: no links, devices, absolute paths or `..`.
+- The snapshot over BitTorrent: every piece is checked against the metadata the pinned info hash names (a .torrent
+  file is used only if its info hash is the pinned one); then the file's sha256 and header, as for https. The seeding
+  afterwards reads the file and writes nothing.
 - Downloads, files while they are checked, and the installer's logs are kept in `/var/lib/alphapool`, a directory
   only root can enter. The installer makes it. If the path is there already, it must be a real directory that belongs
   to root and that nobody else can write to; otherwise the installer stops (AP-211). Nothing is put in `/tmp`,
@@ -574,3 +607,7 @@ command goes on where it stopped, and `--sync network` chooses the full sync ins
 ### Watching after the installer hands over
 
 Run `sudo alphapool-node status --watch` for one progress line each minute (blocks left, measured time left and peers), until READY shows the rig address. Ctrl-C stops watching; the node keeps working. If blocks stop advancing, the watch says so and does not keep showing an old estimate. The provider login screen updates every five minutes. Linux consoles show English only; SSH output and this guide retain Chinese.
+
+## License
+
+MIT (see [LICENSE](LICENSE)).
