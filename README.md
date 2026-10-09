@@ -4,7 +4,7 @@ One command turns a fresh server **you own** into an AlphaPool mining node: a pr
 **DATUM gateway** that builds block templates from your own node. Your rigs connect to your server; your server
 connects to AlphaPool. AlphaPool gets **no access** to your server.
 
-- Script: `install.sh` (version `2026-10-08.6`; changes: `CHANGELOG.md`). Everything below refers to that file.
+- Script: `install.sh` (version `2026-10-09.1`; changes: `CHANGELOG.md`). Everything below refers to that file.
 - Supported: **Ubuntu 24.04 LTS or Ubuntu 22.04 LTS, x64.** Any other system stops at once with error AP-202, before
   anything is changed.
 - Server: **4 GB RAM or more, 80 GB disk or more**, 2 vCPU recommended.
@@ -13,12 +13,23 @@ connects to AlphaPool. AlphaPool gets **no access** to your server.
   - Contabo: Cloud VPS 4 (4 vCPU / 8 GB / 100 GB). It is offered in Singapore and Japan; Contabo has no Seoul
     location. [C5]
 - **Your node validates the chain itself.** It starts from a UTXO snapshot that Bitcoin Knots checks against a hash
-  compiled into Bitcoin Knots, then validates every block since then. With today's snapshot that takes **about half
+  compiled into Bitcoin Knots, then validates every block since then. With the official 910000 option that takes **about half
   a day** on a small server. Keep your rigs mining where they are until the installer, or `alphapool-node status`,
   says **READY**. See "How the node gets its chain".
 
 Provider rules: both providers forbid mining ON the server (CPU/GPU hashing). This server does no hashing: it runs a
 Bitcoin node and the gateway your rigs connect to. Contabo writes "we fully support the hosting of Crypto-Nodes" [C6].
+
+### Default fast start (2026-10-09.1)
+
+New nodes use Chris Guida's Bitcoin Knots 29.4.2 + PR444 build and snapshot **976000**, pinned by the archive and snapshot SHA256 values in this installer. The total start is **about half an hour**, depending on download speed and the blocks left to validate; status reports measured progress and time left.
+
+This developer build is pinned by its sha256 and is not signed by the release builders; when the signed release includes this snapshot, the upgrade command moves your node to that release.
+
+这个开发者构建版按 sha256 固定，发布构建者没有为它签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
+
+Use `--start official` for the builder-signed release and its 910000 snapshot (one to two days). Existing .6 nodes keep their mode and chain state on upgrade and continue catching up; changing the default does not load a new snapshot over existing data. There is no torrent download or seeding in this version. The detailed 910000 timings below describe the official option.
+
 
 ## Install, form 1: one paste (SSH or the provider's web console)
 
@@ -99,14 +110,14 @@ Times were measured on a 2 vCPU / 4 GB / 80 GB virtual machine (see "Tested").
 |---|---|---|
 | 1 | system packages (`curl jq aria2 ufw gpgv ca-certificates iptables` and the gateway's libraries) | 30 s |
 | 2 | user `alphapool`, folders, swap (compressed zram, or a 2 GB file) on servers under 6 GB RAM | (included above) |
-| 3 | Bitcoin Knots 29.4.2.knots20260508: download, **builder signatures and pinned sha256 checked before unpacking**, install | 10 s |
+| 3 | Bitcoin Knots: download; an official release is checked against builder signatures and its pinned sha256, a developer build against the sha256 this installer pins; install | 10 s |
 | 4 | AlphaPool's DATUM gateway release 3.1: tarball sha256 checked **before unpacking**, binary sha256 checked before installing | 1 s |
 | 5 | the UTXO snapshot of block 910,000 (9.6 GB): the installed Bitcoin Knots is asked whether it knows that snapshot; then a resumable download, **sha256 checked**, and the file's own header checked | depends on your line (9.6 GB). If the download server is full, add the wait for a download slot (below) |
 | 6 | configuration: `bitcoin.conf`, gateway config, services | 4 s, steps 6 and 7 together |
 | 7 | firewall: your SSH port(s), stratum, Bitcoin peers allowed; everything else incoming denied | (included above) |
 | 8 | the node starts | 16 s |
 | 9 | the node gets the block headers from the network, then **loads the snapshot** (Bitcoin Knots checks its content against the hash compiled into it). The install is complete here | headers about 3 min, load about 10 min |
-| | **after the install: the node validates every block since the snapshot, by itself.** The gateway starts by itself when the node is at the chain tip, and `alphapool-node status` then says READY | **about half a day**: 66,000 blocks at about 80 blocks a minute took 11 to 12 hours |
+| | **after the install: the node validates every block since the snapshot, by itself.** The gateway starts by itself when the node is at the chain tip, and `alphapool-node status` then says READY | **one to two days** on a small server; status shows measured time left |
 
 How long the last part takes depends mostly on how fast other Bitcoin nodes hand out blocks to yours, not on your
 server. The installer watches the first minutes, prints the blocks left and (once it can be measured) the time left,
@@ -145,7 +156,7 @@ At the end of the install you get:
   Status: alphapool-node status   Logs: alphapool-node logs   Stop: alphapool-node stop   Uninstall: alphapool-node uninstall
 NOT READY yet: keep your rigs mining where they are until this says READY. How far it is: alphapool-node status
 
-The install is complete, and the node is NOT READY yet. It is validating 65,976 blocks: about half a day on a small server.
+The install is complete, and the node is NOT READY yet. It is validating 65,976 blocks: time left is still being measured.
 ```
 
 and when the node is at the chain tip, `alphapool-node status` and the login screen say:
@@ -160,8 +171,9 @@ and when the node is at the chain tip, `alphapool-node status` and the login scr
 
 1. The node loads a **UTXO snapshot**: the set of all unspent coins as of one block. Bitcoin Knots accepts such a
    snapshot only for a block that is **compiled into Bitcoin Knots**, and only if the snapshot's content has the
-   hash that is compiled in as well. AlphaPool cannot change either: both are part of the Bitcoin Knots release,
-   whose builder signatures the installer checks (see "How Bitcoin Knots is verified").
+   hash that is compiled in as well. AlphaPool cannot change either: both are part of the selected Bitcoin Knots
+   build. The installer checks an official release against its builders' signatures and a developer build against
+   the sha256 it pins (see "How Bitcoin Knots is verified").
 2. From that block on, **your node validates every block itself**, up to the chain tip. Only then does the gateway
    start.
 3. In the background the node also validates the **whole history before the snapshot** and compares the result with
@@ -175,7 +187,7 @@ table in the installer; `--help` lists them, each with one sentence that says wh
 
 - This version has one mode, `official`: the official Bitcoin Knots 29.4.2.knots20260508 release, checked against
   its builders' signatures, starting from block 910,000, the newest block that release knows. That block is about
-  66,000 blocks back, which is why the start takes about half a day.
+  66,000 blocks back, which is why the official start is estimated at one to two days.
 - `--start NAME` chooses a mode. Without it a new install takes the installer's default mode.
 - When a Bitcoin Knots build carries a newer block, AlphaPool adds a mode (or changes one); the start is then much
   shorter. If such a build is not signed by the Bitcoin Knots release builders, the installer says so in the plan
@@ -205,7 +217,8 @@ What the installer does around it:
 
 | option | what | time | 
 |---|---|---|
-| (default) | the validated start, as above | about half a day with today's snapshot |
+| (default) | the 976000 fast start | about half an hour |
+| `--start official` | the signed 910000 start | one to two days |
 | `--start NAME` | the validated start of another start mode of the installer (`--help` lists them) | that mode's duration |
 | `--utxo-height N` | the validated start from another snapshot of the installer's list | depends on the block |
 | `--utxo-url URL --utxo-sha256 HEX --utxo-bytes N --utxo-height N` | the validated start from a UTXO snapshot file you name. Your Bitcoin Knots build must have that block compiled in; the installer asks it before it downloads | depends on the block |
@@ -402,8 +415,9 @@ has, with no new sync:
 What the upgrade of the programs does:
 
 - It prints the versions before and after, and asks once (`--yes` skips the question).
-- It downloads and checks the new software BEFORE anything is stopped: builder signatures and pinned sha256 for
-  Bitcoin Knots, pinned sha256 for the gateway.
+- It downloads and checks the new software BEFORE anything is stopped: an official Bitcoin Knots release against
+  builder signatures and pinned sha256, a developer build against the sha256 this installer pins, and the gateway
+  against its pinned sha256.
 - The new programs go into a software set of their own, and the programs installed now are kept as a set too: the
   way back.
 - It stops the gateway, then the node; makes the new set the active one in a single step, so all programs change
@@ -556,3 +570,7 @@ command goes on where it stopped, and `--sync network` chooses the full sync ins
 - [C5] Contabo VPS plans and locations: https://contabo.com/en/vps/ ; https://docs.contabo.com/docs/servers-hosting/vps/
 - [C6] Contabo on crypto nodes: https://contabo.com/blog/can-i-use-contabo-servers-for-crypto/ ; VPS terms ("Cryptocurrency mining is not permitted on VPS"): https://docs.contabo.com/docs/servers-hosting/vps/
 - cloud-init: user-data scripts run once per instance in the final stage: https://docs.cloud-init.io/en/latest/explanation/format/user-data-script.html
+
+### Watching after the installer hands over
+
+Run `sudo alphapool-node status --watch` for one progress line each minute (blocks left, measured time left and peers), until READY shows the rig address. Ctrl-C stops watching; the node keeps working. If blocks stop advancing, the watch says so and does not keep showing an old estimate. The provider login screen updates every five minutes. Linux consoles show English only; SSH output and this guide retain Chinese.

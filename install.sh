@@ -11,7 +11,7 @@
 #     hash compiled into it, then validates every block since then by itself (README "How the node gets its chain")
 #   * a firewall that keeps your SSH port open, lets rigs and Bitcoin peers in and keeps everything else closed
 # Every download is pinned below (https URL + sha256) and checked BEFORE it is used. Bitcoin Knots is also checked
-# against its release builders' signatures (their keys are pinned below).
+# against its release builders' signatures for the official mode; the fast developer build is sha256-pinned only.
 #
 # AlphaPool gets NO access to this server: no SSH keys, no allowlists, no remote commands, no update channel.
 # Your SSH setup is not touched. The optional status heartbeat (only with --node-id and --token) reports sync and
@@ -25,7 +25,7 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-08.6"
+AP_VERSION="2026-10-09.1"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
@@ -49,35 +49,38 @@ INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cl
 #    7 start height        the snapshot a new node starts from (its file is in utxo_table below)
 #    8 duration            how long the node then validates blocks on a small server; every text takes it from here
 #    9 label               how the installer and the dashboard call the mode
-#   10 what you trust      one sentence
+#   10 what you trust      one sentence in English
+#   11 Chinese notice      optional translation of that sentence
 # START_DEFAULT is the mode of a new install; --start NAME takes another one. START_LEGACY is the mode of nodes that
 # were installed before modes existed (they run the official release). Another Bitcoin Knots release, a newer
 # snapshot or another mode is a change of these lines and of utxo_table, and of nothing else. Nodes that are installed
 # keep their mode and their chain; `alphapool-node upgrade` moves them to their mode's build in the new installer.
-START_DEFAULT="official"
+START_DEFAULT="fast"
 START_LEGACY="official"
 start_modes(){ cat <<'MODES'
-official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|about half a day|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
+official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
+fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|pin|840000 880000 910000 976000|976000|about half an hour|a developer build of Bitcoin Knots with the 976000 snapshot|This developer build is pinned by its sha256 and is not signed by the release builders; when the signed release includes this snapshot, the upgrade command moves your node to that release.|这个开发者构建版按 sha256 固定，发布构建者没有为它签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
 MODES
 }
 # utxo_table: the snapshot files, one line each:
 #   <height> <hash of the block at that height> <file name> <bytes> <sha256 of the file> <URL>
 # The file's sha256 is checked before the node sees the file; the node then checks the content itself. Lines that start
-# with # are not used. Today's snapshot is a slow start: block 910000 is about 66,000 blocks behind the tip.
+# with # are not used. Fast starts at 976000; the signed official mode retains its 910000 snapshot.
 utxo_table(){ cat <<'TABLE'
 910000 0000000000000000000108970acb9522ffd516eae17acddcb1bd16469194a821 utxo-910000.dat 9637809744 6ac0208110d6d6c0783c50ea825aae32f5229cf1dcb63ac986543e95aa0306bf https://snapshots.alphapool.tech:8444/xbt/utxo-910000.dat
+976000 000000000000000098441aee029573795681eb1602c75271e809b136e9217373 utxo-976000.dat 9517597408 bfd2460a55ae1d2e94b9957ccd512ae027855feed1dbef996cfed0abebe5d123 https://snapshots.alphapool.tech:8444/xbt/utxo-976000.dat
 TABLE
 }
 # The Bitcoin Knots pin of this run is the build of the node's start mode: mode_apply sets these four (and M_*).
 KNOTS_VER=""; KNOTS_URL=""; KNOTS_SHA256=""; KNOTS_VERIFY=""
-M_NAME=""; M_VER=""; M_URL=""; M_SHA=""; M_VERIFY=""; M_KNOWS=""; M_HEIGHT=""; M_ABOUT=""; M_LABEL=""; M_TRUST=""
+M_NAME=""; M_VER=""; M_URL=""; M_SHA=""; M_VERIFY=""; M_KNOWS=""; M_HEIGHT=""; M_ABOUT=""; M_LABEL=""; M_TRUST=""; M_TRUST_ZH=""
 START_MODE=$START_DEFAULT
 mode_names(){ start_modes | awk -F'|' '$1 !~ /^#/ && NF >= 10 {printf "%s%s", s, $1; s=" "}'; }
 mode_load(){   # NAME -> M_*. 1 = this installer has no such start mode, or its line is not well formed
   local line
   line=$(start_modes | awk -F'|' -v n="$1" '$1 == n && NF >= 10 {print; exit}')
   [ -n "$line" ] || return 1
-  IFS='|' read -r M_NAME M_VER M_URL M_SHA M_VERIFY M_KNOWS M_HEIGHT M_ABOUT M_LABEL M_TRUST <<<"$line"
+  IFS='|' read -r M_NAME M_VER M_URL M_SHA M_VERIFY M_KNOWS M_HEIGHT M_ABOUT M_LABEL M_TRUST M_TRUST_ZH <<<"$line"
   [[ $M_NAME =~ ^[a-z][a-z0-9-]{0,19}$ ]] && [[ $M_VER =~ ^[A-Za-z0-9._-]+$ ]] \
     && [[ $M_URL =~ ^https://[A-Za-z0-9.-]+(:[0-9]{1,5})?/[A-Za-z0-9._~/%+=,@-]*$ ]] && [[ $M_SHA =~ ^[0-9a-f]{64}$ ]] \
     && [[ $M_VERIFY =~ ^(builders|pin)$ ]] && [[ $M_HEIGHT =~ ^[1-9][0-9]{0,8}$ ]] && [[ " $M_KNOWS " == *" $M_HEIGHT "* ]] \
@@ -322,7 +325,17 @@ PHASE=preflight
 TXN_OPEN=0                      # 1 while an upgrade has stopped services and not yet finished or rolled back
 FAST_OPEN=0                     # 1 while a validated start is being made
 NETWORK_RECOVERY=0              # networking recovery may have changed the running node before preflight finishes
+english_console(){
+  [ "${TERM:-}" = linux ] && return 0
+  case "$(tty 2>/dev/null)" in /dev/tty1|/dev/ttyS0) return 0;; esac
+  local output_pid=$BASHPID
+  case "$(readlink "/proc/$output_pid/fd/1" 2>/dev/null)" in /dev/tty1|/dev/ttyS0) return 0;; esac
+  return 1
+}
 say(){ printf '%s\n' "$*"; }
+say_zh(){ english_console || say "$*"; return 0; }
+# The worker log keeps both languages for SSH. Linux console fonts cannot draw Chinese.
+terminal_output(){ if english_console; then LC_ALL=C sed -u '/[^[:print:][:space:]]/d'; else cat; fi; }
 say_t(){ printf '%s  (%s)\n' "$*" "$(date -u +%H:%M:%SZ)"; }   # events with a time stamp: durations are readable
 warn(){ printf 'WARNING: %s\n' "$*"; WARNINGS+=("$*"); }
 # die CODE MESSAGE: a plain-language error with a code the AlphaPool dashboard explains (README "Error codes").
@@ -366,7 +379,7 @@ step(){
   printf '\n[%d/%d] %s  (%s)\n' "$STEP_N" "$TOTAL_STEPS" "$STEP_NAME" "$(date -u +%H:%M:%SZ)"
   status_set "step $STEP_N/$TOTAL_STEPS: $STEP_NAME"
   console_note "installing, step $STEP_N/$TOTAL_STEPS: $STEP_NAME"
-  [ "$STEP_N" -lt "$TOTAL_STEPS" ] && issue_set "installing (step $STEP_N/$TOTAL_STEPS: $STEP_NAME) - log in and run: alphapool-node status"
+  [ "$STEP_N" -lt "$TOTAL_STEPS" ] && issue_set --no-reload "installing (step $STEP_N/$TOTAL_STEPS: $STEP_NAME) - log in and run: alphapool-node status"
   return 0
 }
 status_set(){ { install -d -m 0755 "$RUN" && printf '%s\n' "$*" > "$RUN/install-status"; } 2>/dev/null; return 0; }
@@ -381,9 +394,11 @@ console_note(){
 }
 # /etc/issue.d: the login prompt on the web console shows the install state and, at the end, where rigs connect.
 issue_set(){
+  local reload=1
+  if [ "${1:-}" = --no-reload ]; then reload=0; shift; fi
   [ -d /etc/issue.d ] || mkdir -p /etc/issue.d 2>/dev/null || return 0
   printf 'AlphaPool node: %s\n\n' "${*//\\/}" > /etc/issue.d/alphapool.issue 2>/dev/null || return 0
-  is_dry || timeout 5 agetty --reload >/dev/null 2>&1
+  [ "$reload" = 0 ] || is_dry || timeout 5 agetty --reload >/dev/null 2>&1
   return 0
 }
 run(){ if is_dry; then printf 'DRY: %s\n' "$*" >> "$PLAN"; return 0; fi; "$@"; }   # systemctl/ufw/iptables/swap
@@ -525,6 +540,15 @@ busy(){
 # The log goes through a process-substituted tee; drain lets it flush the last lines before the script exits.
 TEE_PID=""
 start_tee(){ exec 3>&1 4>&2; exec > >(tee -a "$LOG") 2>&1; TEE_PID=$!; }
+# A prompt goes directly to /dev/tty. Close the log pipe and wait for its reader first,
+# so every summary line has reached the terminal before that prompt is written.
+flush_tee(){
+  [ -n "$TEE_PID" ] || return 0
+  local pid=$TEE_PID
+  exec 1>&3 2>&4
+  TEE_PID=""
+  wait "$pid"
+}
 drain(){ [ -n "$TEE_PID" ] || return 0; exec >&- 2>&-; local i; for i in $(seq 1 30); do kill -0 "$TEE_PID" 2>/dev/null || return 0; sleep 0.1; done; }
 
 # ==== small helpers ====================================================================================================
@@ -767,7 +791,8 @@ mode_help(){   # the start modes of this installer, for --help (in a subshell: t
       printf '                            %s%s: %s\n' "$M_NAME" "$([ "$M_NAME" = "$START_DEFAULT" ] && echo ' (the default)')" "$M_LABEL"
       { printf 'Bitcoin Knots %s; the snapshot of block %s; then %s of validating on a small server. ' "$M_VER" "$(sep "$M_HEIGHT")" "$M_ABOUT"
         [ "$M_VERIFY" = builders ] || printf 'NOT signed by the Bitcoin Knots release builders: pinned by its sha256 in this installer. '
-        printf '%s\n' "$M_TRUST"; } | fold -s -w 88 | sed 's/ *$//; s/^/                              /' )
+        printf '%s\n' "$M_TRUST"; } | fold -s -w 88 | sed 's/ *$//; s/^/                              /'
+      [ -z "$M_TRUST_ZH" ] || english_console || printf '                              %s\n' "$M_TRUST_ZH" )
   done
 }
 A_ADDRESS=""; A_TAG=""; A_TAG_SET=0; A_NODE_ID=""; A_TOKEN=""; A_TOKEN_FILE=""; A_NO_HB=0
@@ -1174,7 +1199,8 @@ show_plan(){
   say "  rigs connect to: port $STRATUM_PORT${ALIAS_PORTS:+ (also $ALIAS_PORTS)}"
   case "$KNOTS_CHOICE" in alphapool) say "  node software  : Bitcoin Knots $KNOTS_VER (AlphaPool's tested pin): $M_LABEL"
       [ "$KNOTS_VERIFY" = builders ] || say "                   NOT signed by the Bitcoin Knots release builders: this build is pinned by its sha256 in this installer"
-      say "                   $M_TRUST";;
+      say "                   $M_TRUST"
+      [ -z "$M_TRUST_ZH" ] || say_zh "                   $M_TRUST_ZH";;
     keep) say "  node software  : keep the bitcoind already installed (your choice)";; *) say "  node software  : your Bitcoin Knots build ($KNOTS_CHOICE)";; esac
   case "$GW_CHOICE" in alphapool) say "  gateway        : AlphaPool's DATUM gateway release $GW_VER (tested pin)";;
     keep) say "  gateway        : keep the gateway already installed (your choice)";; *) say "  gateway        : your DATUM gateway build ($GW_CHOICE)";; esac
@@ -1197,8 +1223,10 @@ show_plan(){
 confirm(){
   [ "$YES" = 1 ] && return 0
   if ! [ -r /dev/tty ] || ! { : < /dev/tty; } 2>/dev/null; then die AP-100 "no terminal to ask in: add --yes to run without questions"; fi
-  local ans=""
+  local ans="" logged=0
+  if [ -n "$TEE_PID" ]; then logged=1; flush_tee || die AP-100 "could not finish writing the plan to the terminal"; fi
   { IFS= read -r -p "Type yes to install, anything else to stop: " ans < /dev/tty; } 2>/dev/tty || true
+  [ "$logged" = 0 ] || start_tee
   [ "$ans" = yes ] || { say "Stopped. Nothing was changed."; drain; exit 1; }
 }
 save_settings(){
@@ -1607,6 +1635,7 @@ GWD=/home/alphapool/datum_gateway
 LOG=/var/lib/alphapool/log/install.log
 usage(){ cat <<'U'
 alphapool-node status                       node, gateway, rigs, payout address, heartbeat, warnings
+alphapool-node status --watch               progress every minute until READY (Ctrl-C stops watching only)
 alphapool-node logs [node|gateway|install]  recent log lines
 alphapool-node start|stop|restart [node|gateway|all]   (stop: until the next reboot)
 alphapool-node disable | enable             keep the node and gateway off across reboots / turn them back on
@@ -1632,6 +1661,13 @@ U
   [ -z "$src" ] || echo "The source of AlphaPool's gateway build, to build it yourself: alphapool-node switch gateway git $src"
 }
 need_root(){ [ "$(id -u)" = 0 ] || { echo "run it as root: sudo alphapool-node $*"; exit 1; }; }
+english_console(){
+  [ "${TERM:-}" = linux ] && return 0
+  case "$(tty 2>/dev/null)" in /dev/tty1|/dev/ttyS0) return 0;; esac
+  local output_pid=$BASHPID
+  case "$(readlink "/proc/$output_pid/fd/1" 2>/dev/null)" in /dev/tty1|/dev/ttyS0) return 0;; esac
+  return 1
+}
 # Whatever lives in the node user's folders is read by a process of that user, never by root: the data folder with
 # bitcoin.conf, the gateway folder, and bitcoin-cli itself, which reads bitcoin.conf and the RPC cookie.
 as_u(){ ( cd / 2>/dev/null; exec env HOME=/home/alphapool USER=alphapool LOGNAME=alphapool setpriv --reuid=alphapool --regid=alphapool --init-groups -- "$@" ); }
@@ -1679,6 +1715,40 @@ status(){
   elif [ $late = 1 ]; then nodeline="$ns (busy: no answer within 4 s; try again in a moment)"; why="the node is busy and did not answer"
   else nodeline="$ns (not answering yet: starting or loading the chain)"; why="the node is not answering yet"; fi
   [ ! -e $ETC/install-in-progress ] || why="the install is still running: $(cat /run/alphapool/install-status 2>/dev/null)"
+  if [ "${1:-}" = watch ]; then
+    # Reuse the normal bounded probes and READY check. Estimate only from fresh RPC
+    # samples observed by this watch, never from a fixed duration or stale cache.
+    local now left remaining="time left: measuring" stamp
+    now=$(date +%s); stamp=$(date -u +%H:%M:%SZ)
+    if [ "$gs" = active ] && [ "$payees" -gt 0 ]; then
+      host=$(val PUBLIC_HOST $ETC/node.conf); [ -n "$host" ] || host=$(val DETECTED_HOST $ETC/node.conf)
+      [ -n "$host" ] || host=$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}')
+      printf '%s READY - point rigs at stratum+tcp://%s:%s (worker: anything)\n' "$stamp" "$host" "$port"
+      return 0
+    fi
+    if [ -n "$info" ] && [[ ${b:-} =~ ^[0-9]+$ ]] && [[ ${h:-} =~ ^[0-9]+$ ]] && [ "$h" -ge "$b" ]; then
+      left=$((h - b))
+      if [ -e "$ETC/install-in-progress" ] || [ -e "$ETC/validated-start.journal" ]; then
+        # Loading a snapshot jumps the height without validating that many blocks.
+        WATCH_BLOCKS=-1; WATCH_TIME=$now
+        remaining="the install is still running; time left: unavailable"
+      else
+        if [ "${WATCH_BLOCKS:--1}" -ge 0 ] && [ "$now" -gt "$WATCH_TIME" ]; then
+          if [ "$b" -gt "$WATCH_BLOCKS" ]; then
+            remaining="time left: $(eta_text "$(( left * (now - WATCH_TIME) / (b - WATCH_BLOCKS) ))") at the measured speed"
+          elif [ "$b" = "$WATCH_BLOCKS" ]; then remaining="no new blocks since the last check; time left: unavailable"
+          else remaining="chain changed; time left: measuring"; fi
+        fi
+        WATCH_BLOCKS=$b; WATCH_TIME=$now
+      fi
+      [ "$left" -ne 0 ] || remaining="$why; time left: unavailable"
+      printf '%s NOT READY - block %s of %s; %s blocks left; %s; %s peers\n' "$stamp" "$b" "$h" "$left" "$remaining" "${peers:-?}"
+    else
+      WATCH_BLOCKS=-1; WATCH_TIME=$now
+      printf '%s NOT READY - %s; blocks left: unavailable; time left: unavailable; peers: unavailable\n' "$stamp" "$why"
+    fi
+    return 1
+  fi
   echo "AlphaPool node (installer $(val installer_version $ETC/state))"
   if [ "$gs" = active ] && [ "$payees" -gt 0 ]; then echo "  state    : READY - your rigs can mine here"
   else echo "  state    : NOT READY yet - keep your rigs mining where they are ($why)"; fi
@@ -1731,6 +1801,11 @@ status(){
   pin(){ printf '%s\n' "$pins" | sed -n "s/^$1=//p" | head -1; }
   if [ "$(val knots_source $ETC/state)" = alphapool ] && [ -n "$(pin start_mode)" ]; then
     echo "             start mode: $(pin start_mode) - $(pin start_label)$([ "$(pin start_signed)" = builders ] || echo ' (not signed by the Bitcoin Knots release builders)')"
+    echo "             archive sha256: $(val knots_pin $ETC/state)"
+    if [ "$(pin start_signed)" != builders ]; then
+      echo "             $(pin start_trust)"
+      english_console || { [ -z "$(pin start_trust_zh)" ] || echo "             $(pin start_trust_zh)"; }
+    fi
   fi
   if [ "$(val knots_source $ETC/state)" = alphapool ] && [ -n "$(pin start_gone)" ]; then
     echo "  upgrade  : the installer on this server has no start mode '$(pin start_gone)' any more: Bitcoin Knots stays as it is"
@@ -1750,6 +1825,17 @@ status(){
     echo "             (AlphaPool pays miners in the block's coinbase; above it the payout list may not fit)"
   fi
 }
+status_watch(){
+  local WATCH_BLOCKS=-1 WATCH_TIME=0 watch_sleep=""
+  # Only this command's own wait process is stopped; no service or node signal.
+  trap '[ -z "$watch_sleep" ] || kill "$watch_sleep" 2>/dev/null; exit 130' INT
+  trap '[ -z "$watch_sleep" ] || kill "$watch_sleep" 2>/dev/null; exit 143' TERM
+  until status watch; do
+    sleep 60 & watch_sleep=$!
+    wait "$watch_sleep"; watch_sleep=""
+  done
+  trap - INT TERM
+}
 svc(){
   case "$2" in
     node) systemctl "$1" knots-node.service;;
@@ -1765,7 +1851,12 @@ svc(){
   esac
 }
 case "${1:-status}" in
-  status) need_root status; status;;
+  status) need_root status
+          case "${2:-}" in
+            "") [ "$#" -le 1 ] || { usage; exit 1; }; status;;
+            --watch) [ "$#" = 2 ] || { usage; exit 1; }; status_watch;;
+            *) usage; exit 1;;
+          esac;;
   logs) need_root logs
         case "${2:-all}" in
           node) journalctl -u knots-node -n 60 --no-pager;;
@@ -2895,16 +2986,22 @@ long_catch_up(){
   done
 }
 CATCHUP_LEFT=0; CATCHUP_ETA=""
+handover_next_steps(){
+  say "The install is done and the node keeps working by itself. You can close this window."
+  say "To watch progress here, run: alphapool-node status --watch. Or type exit: the login screen shows the progress and updates every 5 minutes."
+  say_zh "安装已经完成，节点会自行继续工作。您可以关闭此窗口。"
+  say_zh "若要在这里查看进度，请运行：alphapool-node status --watch。也可以输入 exit：登录界面会显示进度，每 5 分钟更新一次。"
+}
 catchup_handover(){   # the long catch-up goes on without the installer: what is left, how long, where to look
   say ""
-  say "The install is complete, and the node is NOT READY yet. It is validating $(sep "$CATCHUP_LEFT") blocks: ${CATCHUP_ETA:-$(catchup_about)}."
+  say "The install is complete, and the node is NOT READY yet. It is validating $(sep "$CATCHUP_LEFT") blocks: ${CATCHUP_ETA:-time left is still being measured}."
   say "  - Keep your rigs mining where they are. Nothing is lost by waiting: this server takes no rigs before READY."
   say "  - The gateway starts by itself when the node is at the chain tip. No command is needed, and you can log out."
   say "  - See how far it is at any time:  alphapool-node status   (blocks left and the time left; it says READY at the end)"
   say "    The same line is on this server's login screen in your provider's web console."
   say "  - The history before the snapshot is checked afterwards, in the background. It does not affect mining."
-  say "安装已完成, 但节点还未就绪: 正在验证 $(sep "$CATCHUP_LEFT") 个区块. 在显示 READY 之前请让矿机继续在原处挖矿."
-  say "查看进度: alphapool-node status (显示剩余区块和时间, 完成后显示 READY). 网关会在节点同步完成后自动启动."
+  say_zh "安装已完成, 但节点还未就绪: 正在验证 $(sep "$CATCHUP_LEFT") 个区块. 在显示 READY 之前请让矿机继续在原处挖矿."
+  say_zh "查看进度: alphapool-node status (显示剩余区块和时间, 完成后显示 READY). 网关会在节点同步完成后自动启动."
   status_set "validating blocks: $(sep "$CATCHUP_LEFT") left${CATCHUP_ETA:+, $CATCHUP_ETA}"
   issue_set "NOT READY yet. The node is validating blocks: $(sep "$CATCHUP_LEFT") left${CATCHUP_ETA:+, $CATCHUP_ETA}. Keep mining where you are until this says READY. Status: alphapool-node status"
   console_note "NOT READY yet: validating $(sep "$CATCHUP_LEFT") blocks${CATCHUP_ETA:+, $CATCHUP_ETA}. Progress: alphapool-node status"
@@ -3115,6 +3212,13 @@ step_config(){
 }
 
 write_gate(){
+  # A separate issue fragment survives progress/READY rewrites of alphapool.issue on the provider console.
+  if [ "$KNOTS_VERIFY" = pin ] && [ "$(kv_get "$STATE" knots_source || true)" = alphapool ]; then
+    install -d -m 0755 /etc/issue.d
+    printf '%s\n' "$M_TRUST" > /etc/issue.d/alphapool-build.issue
+  else
+    rm -f /etc/issue.d/alphapool-build.issue
+  fi
   install -d -m 0755 "$LIB"
   cat > "$LIB/start-gateway-when-synced.new" <<'GATE'
 #!/bin/bash
@@ -3394,8 +3498,8 @@ summary(){
   case "$host" in "<"*) ;; *) [ -w "$CONF" ] && kv_set "$CONF" DETECTED_HOST "$host";; esac   # for alphapool-node status
   say ""
   say "=================================================================================="
-  if [ "$READY" = 1 ]; then say "  AlphaPool node is READY / AlphaPool 节点已就绪"
-  else say "  AlphaPool node installed / AlphaPool 节点已安装 (the gateway starts once the node has caught up)"; fi
+  if [ "$READY" = 1 ]; then say "  AlphaPool node is READY"; say_zh "  AlphaPool 节点已就绪"
+  else say "  AlphaPool node installed (the gateway starts once the node has caught up)"; say_zh "  AlphaPool 节点已安装"; fi
   say "=================================================================================="
   say "  Point your rigs at:   stratum+tcp://$host:$STRATUM_PORT${ALIAS_PORTS:+   (or ports $ALIAS_PORTS)}"
   say "  Worker / user:        anything (for example rig1)    Password: anything"
@@ -3409,15 +3513,15 @@ summary(){
   else say "  Heartbeat:            off - nothing is reported to AlphaPool"; fi
   say "  AlphaPool has no access to this server. Your software, your choice: alphapool-node switch ..."
   say "  ------------------------------------------------------------------------------"
-  say "  矿机连接地址:  stratum+tcp://$host:$STRATUM_PORT"
-  say "  矿工名/密码:   任意 (例如 rig1)"
-  say "  收款地址:      $ADDRESS"
-  say "  查看状态:      alphapool-node status      卸载: alphapool-node uninstall"
-  [ "$HEARTBEAT" = on ] && say "  关闭状态上报:  alphapool-node heartbeat off"
+  say_zh "  矿机连接地址:  stratum+tcp://$host:$STRATUM_PORT"
+  say_zh "  矿工名/密码:   任意 (例如 rig1)"
+  say_zh "  收款地址:      $ADDRESS"
+  say_zh "  查看状态:      alphapool-node status      卸载: alphapool-node uninstall"
+  [ "$HEARTBEAT" = on ] && say_zh "  关闭状态上报:  alphapool-node heartbeat off"
   say "=================================================================================="
   if [ "$READY" != 1 ]; then
     say "NOT READY yet: keep your rigs mining where they are until this says READY. How far it is: alphapool-node status"
-    say "还未就绪: 在显示 READY 之前, 请让矿机继续在原来的地方挖矿. 查看进度: alphapool-node status"
+    say_zh "还未就绪: 在显示 READY 之前, 请让矿机继续在原来的地方挖矿. 查看进度: alphapool-node status"
   fi
   if [ ${#WARNINGS[@]} -gt 0 ]; then
     say "Warnings:"; for w in "${WARNINGS[@]}"; do say "  - $w"; done
@@ -3685,6 +3789,7 @@ mode_say(){   # the start mode of the build an upgrade moves to: said when it is
   say "                  start mode: $M_NAME - $M_LABEL"
   [ "$KNOTS_VERIFY" = builders ] || say "                  NOT signed by the Bitcoin Knots release builders: this build is pinned by its sha256 in this installer"
   say "                  $M_TRUST"
+  [ -z "$M_TRUST_ZH" ] || say_zh "                  $M_TRUST_ZH"
 }
 upgrade_plan(){   # what would change -> UP_K / UP_G ("" or alphapool), one line per component. Your own builds are left alone
   local ks gs                                 # unless you asked with --knots alphapool / --gateway alphapool.
@@ -3917,6 +4022,8 @@ worker_body(){
     upgrade_result; say "=== done $(date -u +%FT%TZ) ==="; return 3
   fi
   say "=== done $(date -u +%FT%TZ) ==="
+  [ "$READY" = 1 ] || handover_next_steps
+  return 0
 }
 worker(){
   [ "$(id -u)" = 0 ] || { echo "run as root"; exit 1; }
@@ -3960,14 +4067,14 @@ follow(){   # show the worker's log from OFFSET until it finishes; its result is
   while :; do
     pid=$(systemctl show -p MainPID --value "$INSTALL_UNIT" 2>/dev/null)
     if [[ $pid =~ ^[1-9][0-9]*$ ]]; then
-      tail -c +"$(( off + 1 ))" --pid="$pid" -f "$LOG"; off=$(stat -c %s "$LOG")
+      tail -c +"$(( off + 1 ))" --pid="$pid" -f "$LOG" | terminal_output; off=$(stat -c %s "$LOG")
       continue
     fi
     # no worker process: finished, or killed and about to be started again by systemd (an upgrade is then finished from its journal)
     [ "$(unit_state "$INSTALL_UNIT.service")" = activating ] || break
     sleep 1
   done
-  tail -c +"$(( off + 1 ))" "$LOG"
+  tail -c +"$(( off + 1 ))" "$LOG" | terminal_output
   case "$(cut -d' ' -f1 "$ETC/last-result" 2>/dev/null)" in ok) exit 0;; upgrade-waiting) exit 3;; *) exit 1;; esac
 }
 launch(){
@@ -4035,7 +4142,7 @@ uninstall_main(){
   done
   run systemctl daemon-reload
   rm -f /usr/local/bin/bitcoind /usr/local/bin/bitcoin-cli "$CLI_BIN" /etc/needrestart/conf.d/alphapool.conf \
-        /etc/issue.d/alphapool.issue /var/lib/alphapool-swapfile
+        /etc/issue.d/alphapool.issue /etc/issue.d/alphapool-build.issue /var/lib/alphapool-swapfile
   rm -rf "$LIB" "$DL" "$TMPD" "$HAND" "$RUN" "$ETC"          # (the log directory in $VAR stays)
   if [ -d "$OLD_DL" ] && [ ! -L "$OLD_DL" ] && [ "$(stat -c %u -- "$OLD_DL")" = 0 ]; then rm -rf -- "$OLD_DL"; fi
   # The node user's folders are emptied by a process of the node user; root removes only what is root's: the user
@@ -4154,6 +4261,7 @@ main(){
         "$AP_VERSION" "$KNOTS_VER" "$KNOTS_SHA256" "$GW_VER" "$PIN_GW_BIN" "$(gw_src)"
       printf 'start_mode=%s\nstart_label=%s\nstart_signed=%s\nstart_about=%s\nstart_default=%s\nstart_modes=%s\nstart_gone=%s\n' \
         "$([ -n "$MODE_GONE" ] || echo "$M_NAME")" "$M_LABEL" "$M_VERIFY" "$M_ABOUT" "$START_DEFAULT" "$(mode_names)" "$MODE_GONE"
+      printf 'start_trust=%s\nstart_trust_zh=%s\n' "$M_TRUST" "$M_TRUST_ZH"
       utxo_pick mode && printf 'utxo_height=%s\nutxo_sha256=%s\nutxo_url=%s\n' "$UX_HEIGHT" "$UX_SHA" "$UX_URL"
       exit 0;;
     upgrade) upgrade_main; exit 0;;

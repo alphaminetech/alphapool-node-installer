@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-10-09.1
+
+- Flush the complete plan before asking for confirmation; print each console step once without redrawing the login prompt. Linux console output is English only; SSH retains Chinese.
+- Add `alphapool-node status --watch`: one progress line per minute, measured time left, explicit stalled progress, and the rig address at READY. Ctrl-C stops the watch only. The final handover lines explain how to keep watching or log out.
+- Use the same one-to-two-day estimate for the signed 910000 option in the installer and page.
+
+- Make the sha256-pinned Knots 29.4.2 + PR444 build and snapshot 976000 the default fast start; keep the signed 910000 route with `--start official`.
+- Show the developer-build notice and later signed-release upgrade path in English and Chinese; keep measured progress in status.
+- No torrent; downloads retain their exact SHA256 checks. Existing nodes keep their start mode and chain state on upgrade.
+
 ## 2026-10-08.6
 
 - An installer retry checks for an existing snapshot import before networking recovery, startup planning and
