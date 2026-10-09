@@ -4,7 +4,7 @@ One command turns a fresh server **you own** into an AlphaPool mining node: a pr
 **DATUM gateway** that builds block templates from your own node. Your rigs connect to your server; your server
 connects to AlphaPool. AlphaPool gets **no access** to your server.
 
-- Script: `install.sh` (version `2026-10-08.2`; changes: `CHANGELOG.md`). Everything below refers to that file.
+- Script: `install.sh` (version `2026-10-08.6`; changes: `CHANGELOG.md`). Everything below refers to that file.
 - Supported: **Ubuntu 24.04 LTS or Ubuntu 22.04 LTS, x64.** Any other system stops at once with error AP-202, before
   anything is changed.
 - Server: **4 GB RAM or more, 80 GB disk or more**, 2 vCPU recommended.
@@ -349,9 +349,14 @@ on that program is yours, and no upgrade or re-run touches it. Bitcoin Knots cou
 - Anything downloaded from a URL is checked against the sha256 you give.
 - **Re-running the installer never replaces software you chose or swapped in by hand.** Only an explicit
   `alphapool-node switch ... alphapool` goes back to AlphaPool's build.
-- When the build of AlphaPool's gateway that the installer pins has a public source, `--help`,
-  `alphapool-node help`, the upgrade plan and `alphapool-node status` name its repository and commit, so that you
-  can build the same source yourself with `--gateway-git`.
+- AlphaPool's gateway archives are built from the public source at
+  [alphaminetech/datum_gateway](https://github.com/alphaminetech/datum_gateway), branch `alphapool`, commit
+  `90f01b76625f5936febdc2389759c462467a750a`. The repository's `contrib/reproducible/build.sh` and its README
+  explain how to rebuild the archives and compare their sha256. `--help`, `alphapool-node help`, the upgrade plan
+  and `alphapool-node status` name this repository and commit. You can build it yourself with
+  `--gateway-git https://github.com/alphaminetech/datum_gateway.git --gateway-commit 90f01b76625f5936febdc2389759c462467a750a`.
+  A build you make reports the same source version but may have different bytes; the installer treats it as your
+  own build and keeps it on later upgrades.
 - Compatibility:
   - The node must follow the same chain and rules as AlphaPool: Knots 29.4.2 or later in that line.
   - AlphaPool tests its own gateway build only. Other builds may handle AlphaPool's payout list differently.
@@ -430,6 +435,10 @@ Afterwards, `alphapool-node upgrade` repeats the upgrade with the installer alre
 build available" when that installer pins another Bitcoin Knots or gateway build than the one that runs. Re-running a
 newer installer in the normal way (the install command) upgrades through the same path.
 
+Nodes installed by an earlier installer run an earlier build of gateway release 3.1. Upgrading to this version
+moves the gateway to the public build above: the gateway restarts once, Bitcoin Knots is not stopped, and the
+gateway's settings and identity key stay as they are.
+
 ## How Bitcoin Knots is verified
 
 Bitcoin Knots is installed or upgraded only when all of this holds:
@@ -497,7 +506,14 @@ and the logs in `/var/lib/alphapool/log` stay.
 | AP-301 … 309 | network: DNS, a download host, AlphaPool's server (TCP 28916), the snapshot on the server differs, download failed, no free download slot for a day, the Knots signature files could not be downloaded, the node found no peers or got no block headers (309: allow outgoing TCP 8333) |
 | AP-401 … 407 | integrity: sha256 mismatch, unsafe archive, no gateway build published for this Ubuntu release, no valid signature from a pinned Bitcoin Knots builder key (406), archive not listed exactly once in the signed SHA256SUMS (407) |
 | AP-411 … 414 | the validated start: this Bitcoin Knots build does not know the snapshot's block (411); the file is not the expected snapshot, or Bitcoin Knots rejected its content (412: the file is deleted); the node did not load it (413); a Bitcoin Knots build that does not know the block of the snapshot a node still depends on is not put in place, or was put back because the node did not start on it (414) |
+| AP-415 | networking could not be safely paused or confirmed restored after a validated start; any recovery marker and journal are kept. Fix the reported cause, then run `sudo alphapool-node repair`. The marker is `/etc/alphapool/network-paused`; do not delete it to bypass recovery |
+| AP-416 | a snapshot import is still running, or its state could not be checked safely. This command refuses to continue without stopping the node, enabling networking or removing pending recovery state. Check `sudo alphapool-node status`; wait for the import to finish or fix the reported inspection problem, then run the same command again |
 | AP-501 … 517 | install: apt, user, programs could not be put in place (503), gateway binary does not run (504), a config could not be written (505), node start, background service, firewall (ufw); upgrade put back: the new node did not start (511), the gateway did not come back (512), a service could not be stopped (515), the upgrade was cut off by a signal (516); upgrade done but the gateway is not back yet (513, exit code 3); an upgrade that was cut short was put back (517) |
+
+AP-416 leaves the networking marker, validated-start journal, handed-off snapshot and installation/upgrade state
+in place. It also leaves this invocation's scratch directory alone; the next run that passes the import guard
+removes old `run.*` scratch directories when it prepares its work area. A failed RPC or service query is not proof
+that an import has finished. A positively stopped or absent service can still follow the normal reboot/recovery path.
 
 After AP-309 and AP-411 to AP-413 the node is stopped, so that it does not sync the whole chain by itself; the same
 command goes on where it stopped, and `--sync network` chooses the full sync instead.

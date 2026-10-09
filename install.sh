@@ -25,7 +25,7 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-08.2"
+AP_VERSION="2026-10-08.6"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
@@ -101,16 +101,16 @@ GW_VER="3.1"                    # the label status and the upgrade show ("releas
 # from that commit (such a build sends the commit to the pool as its version). While both are empty, no text of the
 # installer names a source: the archives below are release 3.1 as it was built before its source was published.
 # tests/gateway_pin.py writes these eight lines from the files of a publication; nothing is typed in.
-GW_GIT_URL=""
-GW_GIT_COMMIT=""
-GW_URL="https://snapshots.alphapool.tech:8444/gw/datum_gateway-r3.1-4e56f553732e.tar.gz"
-GW_TAR_SHA256="09fe3762fe1b0bef5873ef06a466ab500e19d01e5836cb9492403cead8a67e72"
-GW_SHA256="4e56f553732e981113ffd2abdc8fd59d6c7dbf63fc3bafe579058bda9aaf8aa7"
+GW_GIT_URL="https://github.com/alphaminetech/datum_gateway.git"
+GW_GIT_COMMIT="90f01b76625f5936febdc2389759c462467a750a"
+GW_URL="https://snapshots.alphapool.tech:8444/gw/datum_gateway-r3.1-g90f01b76625f-noble.tar.gz"
+GW_TAR_SHA256="85e5131c272418bf1c12a59802aaea58a902f020c6e9a25bbb46c1ff8b3d14ed"
+GW_SHA256="02ca5e7b78c4bd89b97ab385932a6f7baecb0c77bc023f5a57d06d956a336792"
 # Ubuntu 22.04: the same source built there (the build above needs glibc 2.38; 22.04 has 2.35). The installer picks
 # the build by VERSION_ID.
-GW_JAMMY_URL="https://snapshots.alphapool.tech:8444/gw/datum_gateway-r3.1-jammy-b601102ba731.tar.gz"
-GW_JAMMY_TAR_SHA256="c7cb95ac67a76bf04fbcd38cbc9ba4172fe10c76cb2836c5d5e82144e779767c"
-GW_JAMMY_SHA256="b601102ba7314ce0277f3a7acd0a2f7fa97ebdf35f560b93db78a59d4807fcfc"
+GW_JAMMY_URL="https://snapshots.alphapool.tech:8444/gw/datum_gateway-r3.1-g90f01b76625f-jammy.tar.gz"
+GW_JAMMY_TAR_SHA256="93fe865c5ecedb30886e16ce9ae8943b3a88218f362af078608a9f6caa19d15c"
+GW_JAMMY_SHA256="52367405588d48138a972f871624fe9da88df350bec6ebc03d4d83e954f3b043"
 # A node keeps the build it has until `alphapool-node upgrade` moves it to the build pinned here. Archives that an
 # earlier installer pinned stay on the download server: that installer still checks them by their sha256.
 
@@ -300,6 +300,7 @@ SETS=$LIB/sets                  # the software sets: one directory per installed
 CUR=$LIB/current                # link to the active set
 JOURNAL=$ETC/upgrade.journal    # there while an upgrade is in flight: previous set, new set, step
 UJ=$ETC/validated-start.journal # there while a validated start is not finished: which UTXO snapshot it uses
+NETWORK_PAUSE=$ETC/network-paused # durable intent: this installer paused a node that had networking enabled
 case "$NODE_CHAIN" in main) CDIR=$DD;; *) CDIR=$DD/$NODE_CHAIN;; esac   # where the node keeps blocks/ and chainstate/
 RUN=/run/alphapool
 UNITS=/etc/systemd/system
@@ -320,6 +321,7 @@ WARNINGS=()
 PHASE=preflight
 TXN_OPEN=0                      # 1 while an upgrade has stopped services and not yet finished or rolled back
 FAST_OPEN=0                     # 1 while a validated start is being made
+NETWORK_RECOVERY=0              # networking recovery may have changed the running node before preflight finishes
 say(){ printf '%s\n' "$*"; }
 say_t(){ printf '%s  (%s)\n' "$*" "$(date -u +%H:%M:%SZ)"; }   # events with a time stamp: durations are readable
 warn(){ printf 'WARNING: %s\n' "$*"; WARNINGS+=("$*"); }
@@ -328,7 +330,9 @@ die(){
   local code=$1; shift
   printf '\nERROR [%s]: %s\n' "$code" "$*"
   if [ "$PHASE" = preflight ]; then
-    say "Nothing was changed on this server. Fix the problem above and run the same command again."
+    if [ "$code" = AP-415 ]; then say "Networking recovery did not finish. Any pending recovery marker and validated-start journal were kept."
+    elif [ "$NETWORK_RECOVERY" = 1 ]; then say "Earlier networking recovery ran before this check. Fix the problem above and run the same command again."
+    else say "Nothing was changed on this server. Fix the problem above and run the same command again."; fi
     [ "$MODE" = install ] && issue_set "install NOT started [$code]: $* - fix it, then run the install command again"
   elif [ "$PHASE" = upgrade ]; then
     [ "$TXN_OPEN" = 1 ] && txn_rollback           # never leave with services stopped or a half-made switch
@@ -1453,6 +1457,7 @@ After=network-online.target
 Wants=network-online.target
 ConditionPathExists=|/etc/alphapool/install-in-progress
 ConditionPathExists=|/etc/alphapool/upgrade.journal
+ConditionPathExists=|/etc/alphapool/network-paused
 [Service]
 Type=simple
 ExecStart=/bin/bash /usr/local/lib/alphapool/install.sh --worker --resumed
@@ -2416,6 +2421,7 @@ uj_pending(){ [ -f "$UJ" ] && [ ! -L "$UJ" ]; }
 # it). Whatever else has that name is left alone: nothing in it is looked at, moved or removed.
 hand_ok(){ local o; [ -d "$HAND" ] && [ ! -L "$HAND" ] && o=$(stat -c '%u %a' -- "$HAND" 2>/dev/null) && [ "${o%% *}" = 0 ] && (( (8#${o##* } & 8#022) == 0 )); }
 uj_drop(){   # you chose another way: an unfinished validated start is dropped, with the snapshot file it had downloaded
+  network_restore
   local f; f=$(kv_get "$UJ" file 2>/dev/null || true)
   if [[ $f =~ ^[A-Za-z0-9._-]+$ ]]; then rm -f -- "${DL:?}/${f:?}" "${DL:?}/${f:?}.aria2"; hand_ok && rm -f -- "${HAND:?}/${f:?}"; fi
   rm -f "$UJ"
@@ -2693,8 +2699,94 @@ load_progress(){   # runs beside loadtxoutset: how far the node is, from its own
     esac
   done
 }
+snapshot_service_stopped(){
+  local info key value load="" state="" pid="" fields=0
+  info=$(timeout 4 systemctl show knots-node.service -p LoadState -p ActiveState -p MainPID 2>/dev/null) || return 1
+  while IFS='=' read -r key value; do
+    case "$key" in
+      LoadState) load=$value;; ActiveState) state=$value;; MainPID) pid=$value;; *) return 1;;
+    esac
+    fields=$(( fields + 1 ))
+  done <<< "$info"
+  case "$load:$state:$pid:$fields" in
+    loaded:inactive:0:3|loaded:failed:0:3|not-found:inactive:0:3) return 0;;
+  esac
+  return 1
+}
+snapshot_import_state(){   # active, idle, or unknown; a failed query never establishes idle by itself
+  local info state
+  if info=$(as_u timeout 4 /usr/local/bin/bitcoin-cli -datadir="$DD" getrpcinfo 2>/dev/null); then
+    state=$(printf '%s' "$info" | jq -er '
+      if type == "object" and (.active_commands | type == "array") and
+         all(.active_commands[]; type == "object" and (.method | type == "string") and
+             (.method | length > 0) and (.duration | type == "number") and .duration >= 0)
+      then if any(.active_commands[]; .method == "loadtxoutset") then "active" else "idle" end
+      else "unknown" end' 2>/dev/null) || state=unknown
+    case "$state" in active|idle) printf '%s\n' "$state";; *) echo unknown;; esac
+  elif snapshot_service_stopped; then echo idle
+  else echo unknown; fi
+}
+snapshot_import_refuse(){
+  printf '\nERROR [AP-416]: %s\n' "$*"
+  say "This refusal leaves the node and pending installation state in place. Check: sudo alphapool-node status"
+  say "Wait for the import to finish (or resolve the inspection error), then run the same command again."
+  # An import outlives its installer worker. Neither die's fast_abort nor EXIT's upgrade rollback may stop it.
+  trap - EXIT
+  drain
+  exit 1
+}
+snapshot_import_guard(){
+  local state
+  state=$(snapshot_import_state)
+  case "$state" in
+    idle) return 0;;
+    active) snapshot_import_refuse "Bitcoin Knots is still loading a UTXO snapshot; this command cannot continue yet.";;
+    *) snapshot_import_refuse "Bitcoin Knots' active imports could not be determined safely. No further recovery changes or another snapshot load will be attempted by this command.";;
+  esac
+}
+network_error(){ die AP-415 "$* Fix the problem, then run: sudo alphapool-node repair"; }
+network_pause_dir(){
+  local o
+  [ -d "$ETC" ] && [ ! -L "$ETC" ] && o=$(stat -c '%u %a' -- "$ETC" 2>/dev/null) &&
+    [ "${o%% *}" = 0 ] && (( (8#${o##* } & 8#022) == 0 ))
+}
+network_pause_check(){
+  network_pause_dir && plain_own "$NETWORK_PAUSE" &&
+    [ "$(stat -c '%a %s' -- "$NETWORK_PAUSE")" = "600 9" ] && [ "$(cat -- "$NETWORK_PAUSE")" = 'format=1' ]
+}
+network_pause(){
+  local info
+  network_restore                         # settle an earlier pause before claiming a new one
+  info=$(cli getnetworkinfo 2>/dev/null) || network_error "Bitcoin Knots did not report whether networking is enabled."
+  # An operator's offline node is not ours to turn back on.
+  if printf '%s' "$info" | jq -e '.networkactive == false' >/dev/null 2>&1; then return 0; fi
+  printf '%s' "$info" | jq -e '.networkactive == true' >/dev/null 2>&1 || network_error "Bitcoin Knots returned no boolean networking state."
+  network_pause_dir || network_error "$ETC must be a directory owned by root that other users cannot write."
+  ( umask 077; new_file "$NETWORK_PAUSE.new" && printf 'format=1\n' > "$NETWORK_PAUSE.new" ) &&
+    mv -T -f -- "$NETWORK_PAUSE.new" "$NETWORK_PAUSE" && network_pause_check &&
+    sync -f "$NETWORK_PAUSE" && sync -f "$ETC" || network_error "The networking recovery marker could not be safely saved."
+  cli setnetworkactive false >/dev/null 2>&1 || network_error "Bitcoin Knots could not pause networking; the recovery marker was kept."
+}
+network_restore(){
+  local info
+  snapshot_import_guard
+  [ -e "$NETWORK_PAUSE" ] || [ -L "$NETWORK_PAUSE" ] || return 0
+  network_pause_check || network_error "$NETWORK_PAUSE is not a valid root-owned networking recovery marker; inspect its owner, permissions and content."
+  # Idempotent start preserves a running node, and also recovers after fast_abort stopped it.
+  NETWORK_RECOVERY=1
+  run_q systemctl start knots-node.service || network_error "Bitcoin Knots could not be started for networking recovery."
+  as_u timeout 35 /usr/local/bin/bitcoin-cli -datadir="$DD" -rpcwait -rpcwaittimeout=30 getnetworkinfo >/dev/null 2>&1 ||
+    network_error "Bitcoin Knots did not answer within 30 seconds after starting it; check alphapool-node logs node."
+  snapshot_import_guard
+  cli setnetworkactive true >/dev/null 2>&1 || network_error "Bitcoin Knots refused to restore networking; the recovery marker was kept."
+  info=$(cli getnetworkinfo 2>/dev/null) && printf '%s' "$info" | jq -e '.networkactive == true' >/dev/null 2>&1 ||
+    network_error "Bitcoin Knots did not confirm networking is enabled; the recovery marker was kept."
+  rm -f -- "$NETWORK_PAUSE" || network_error "Networking is enabled, but the recovery marker could not be removed."
+  sync -f "$ETC" 2>/dev/null; return 0       # a stale marker after a crash only repeats the confirmed restore
+}
 fast_load(){   # FILE OUT_FILE
   local f=$1 out=$2 hf rc msg t0
+  snapshot_import_guard
   # The node reads the file itself, as the node user. The file does not go into the node's folders: it moves into a
   # directory of root's which the node user may read and not write, and root removes it from there afterwards.
   shared_dir "$HAND" || die AP-211 "$HAND is there already, but not as a directory of root's alone. The installer hands the snapshot file to the node there and will not use it like this. Look at it, remove it (rm -rf $HAND), then run again."
@@ -2704,11 +2796,11 @@ fast_load(){   # FILE OUT_FILE
   rstate extracting 0 "$UX_BYTES"; status_set "step $STEP_N/$TOTAL_STEPS: loading the UTXO snapshot"
   console_note "loading the UTXO snapshot into the node (10 to 40 minutes)"
   t0=$(date +%s)
-  cli setnetworkactive false >/dev/null 2>&1
+  network_pause
   load_progress & BG_PID=$!
   as_u /usr/local/bin/bitcoin-cli -datadir="$DD" -rpcclienttimeout=0 loadtxoutset "$hf" > "$out" 2>&1; rc=$?
   kill "$BG_PID" 2>/dev/null; wait "$BG_PID" 2>/dev/null; BG_PID=""
-  cli setnetworkactive true >/dev/null 2>&1
+  network_restore
   msg=$(tr '\n' ' ' < "$out" | sed 's/  */ /g' | head -c 700)
   if [ $rc -eq 0 ]; then
     rm -f -- "$hf"
@@ -2727,6 +2819,7 @@ fast_load(){   # FILE OUT_FILE
   die AP-413 "the node did not load the UTXO snapshot. The node said: ${msg:-nothing (did it stop? alphapool-node logs node)}"
 }
 fast_done(){   # the node has its chain start: the install is complete; what is left is the node's own work
+  network_restore
   rm -f -- "$DL/$UX_FILE" "$DL/$UX_FILE.aria2"; hand_ok && rm -f -- "$HAND/$UX_FILE"
   kv_set "$STATE" chain_start assumeutxo; kv_set "$STATE" chain_start_height "$UX_HEIGHT"
   kv_set "$STATE" chain_start_base "$UX_BASE"; kv_set "$STATE" chain_start_at "$(date -u +%FT%TZ)"
@@ -2738,12 +2831,14 @@ fast_done(){   # the node has its chain start: the install is complete; what is 
 }
 fast_start(){   # step 9 of a validated start. Every part can be run again: after a reboot, after a failed attempt.
   local out
+  snapshot_import_guard
   FAST_OPEN=1
   uj_load
   work_dir; out=$WORK/loadtxoutset.out
   if snapshot_active; then say "  the node has loaded the UTXO snapshot of block $(sep "$UX_HEIGHT") already"; fast_done; return 0; fi
   if [ "$(cli getblockcount 2>/dev/null || echo 0)" -ge "$UX_HEIGHT" ] 2>/dev/null; then
     say "  this node has validated the chain past block $(sep "$UX_HEIGHT") by itself already: it needs no snapshot"
+    network_restore
     rm -f "$DL/$UX_FILE" "$DL/$UX_FILE.aria2" "$UJ"; FAST_OPEN=0
     kv_set "$STATE" chain_start network; install_complete; return 0
   fi
@@ -3205,6 +3300,7 @@ step_start(){
   say "  install complete: the gateway starts by itself once the node has caught up"
 }
 install_complete(){
+  network_restore
   rm -f "$ETC/install-in-progress"
   printf 'ok %s\n' "$(date -u +%FT%TZ)" > "$ETC/last-result"
   kv_set "$STATE" installed_at "$(date -u +%FT%TZ)"
@@ -3724,6 +3820,8 @@ upgrade_main(){
   printf '\n=== AlphaPool node upgrade, installer %s %s%s ===\n' "$AP_VERSION" "$(date -u +%FT%TZ)" "$(is_dry && echo ' (DRY_RUN)')"
   take_lock || busy                              # before anything is read or written that another run could be changing
   load_settings
+  snapshot_import_guard
+  network_restore
   [ -z "$A_START" ] || START_MODE=$A_START
   if ! mode_apply; then                          # the node's start mode is not in this installer: its Knots stays, unless you name a mode
     [ -z "$A_START" ] || die AP-105 "'$A_START' is not a start mode of this installer. It has: $(mode_names)."
@@ -3832,6 +3930,8 @@ worker(){
   [ "$RESUMED" = 1 ] && say "(continuing after a restart of the server)"
   PHASE=install
   load_settings
+  snapshot_import_guard
+  network_restore
   TOKEN=$(head -c 200 "$TOKEN_FILE" 2>/dev/null | tr -d '[:space:]')
   if [ "$WORKER_KIND" = upgrade ] || { [ "$RESUMED" = 1 ] && [ ! -e "$ETC/install-in-progress" ]; }; then
     # An upgrade does not need the node's start mode to be one of this installer's: the Bitcoin Knots of a mode it does
@@ -4086,6 +4186,8 @@ main(){
   printf '\n=== AlphaPool node installer %s %s%s ===\n' "$AP_VERSION" "$(date -u +%FT%TZ)" "$(is_dry && echo ' (DRY_RUN)')"
   take_lock || busy                              # before anything is read or written that another run could be changing
   load_settings
+  snapshot_import_guard
+  network_restore
   apply_flags
   read_token
   validate_settings

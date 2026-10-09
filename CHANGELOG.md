@@ -1,5 +1,36 @@
 # Changelog
 
+## 2026-10-08.6
+
+- An installer retry checks for an existing snapshot import before networking recovery, startup planning and
+  snapshot-file handling. A running import, including a newly started one, or an unknown live-node state produces
+  AP-416 and leaves the node and pending recovery files in place. Run the same command again after the import
+  finishes or the inspection problem is resolved. A confirmed stopped node can still recover after reboot.
+- AP-416 does not run failure cleanup or upgrade rollback. The existing networking recovery checks and all
+  Knots, gateway and snapshot pins remain unchanged.
+
+## 2026-10-08.5
+
+- A validated start records a root-owned recovery marker before pausing Bitcoin Knots networking. If the installer
+  worker is killed during the load, the same command or the resume unit restores networking before completing the
+  install, including when Knots already has the snapshot. Restoration must succeed and Knots must confirm that
+  networking is enabled before the marker or validated-start journal is removed.
+- Failed recovery keeps the marker and journal and reports AP-415 with `sudo alphapool-node repair`. A node that was
+  deliberately offline without an installer recovery marker stays offline. This revision changes the installer;
+  its pinned Knots, gateway and snapshot are unchanged.
+- The My node guide retains the reviewed one-to-two-day catch-up estimate. The installer's `--pins start_about`
+  wording remains about half a day; the page uses the guide's estimate.
+
+## 2026-10-08.4
+
+- **AlphaPool's gateway build now has public source.** The installer pins the Ubuntu 24.04 and 22.04 archives
+  built from `90f01b76625f5936febdc2389759c462467a750a` of
+  [alphaminetech/datum_gateway](https://github.com/alphaminetech/datum_gateway), branch `alphapool`. Each archive
+  and its gateway binary is checked against its pinned sha256. The help, status and upgrade plan name the source.
+- An upgrade moves an earlier AlphaPool gateway build to this one, with one gateway restart. Bitcoin Knots is
+  not stopped; the chain data, gateway settings and identity key are kept. The official Bitcoin Knots 29.4.2
+  release and validated start from block 910,000 are the same.
+
 ## 2026-10-08.2
 
 - **The time left is no longer wrong right after the snapshot is loaded.** In the first quarter of an hour after the
