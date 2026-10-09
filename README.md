@@ -82,7 +82,9 @@ Use `--format cloud-config` for a `#cloud-config` version.
   - Vultr's console is a browser noVNC terminal. [V4]
   - Contabo needs a VNC client. [C4]
   - You can also log in with SSH and run `alphapool-node status`.
-- **If the server reboots during the install**, the install continues by itself after the reboot.
+- **If the server reboots during the install**, recovery is attempted automatically. If it reports AP-416 while
+  Bitcoin Knots is still starting or cannot be inspected safely, pending state is kept. Wait for startup to finish
+  or resolve the reported inspection problem, then run the same install command again.
 - **The heartbeat token in user data.** Your provider stores user data, and programs on the server can read it back
   through the cloud metadata service. [V6]
   - The token only lets its holder report status for your node.
@@ -191,10 +193,13 @@ What the installer does around it:
 - The file is handed to the node in `/var/lib/alphapool-handover`, a directory of root's that the node's user may
   read and not write. The node reads it from there; root deletes it afterwards. Nothing is put into the node's own
   folder by root.
-- **If anything fails, the node is stopped** and the error says what to do. A node left running without its snapshot
-  would sync the whole chain from the network, for days, without telling anyone. Run the same command again: it goes
+- **If snapshot validation or loading fails, the node is stopped** and the error says what to do. AP-416 instead
+  preserves the node and pending state because an import is active or cannot be inspected safely. A node left
+  running without its snapshot would sync the whole chain from the network, for days, without telling anyone.
+  Run the same command again: it goes
   on where it stopped (the download resumes; a file that is checked already is not downloaded again).
-- A reboot at any point is continued by itself.
+- After a reboot, recovery is attempted automatically. AP-416 can require a manual retry after node startup or
+  after the reported inspection problem is resolved; run the same command again.
 
 **Other ways.**
 
@@ -411,8 +416,10 @@ What the upgrade of the programs does:
   that cannot be made active (AP-503). The command then ends with an error. It reports success only when the node,
   and the gateway if it ran before, run the new programs.
 - **If the upgrade is cut short** (the installer is killed, the server loses power or reboots), it is finished from
-  its journal, or the previous programs are put back. This happens by itself when the server starts again, or when
-  you run the upgrade command again. Until then `alphapool-node status` says that an upgrade was cut short.
+  its journal, or the previous programs are put back. Recovery is attempted automatically when the server starts
+  again, or when you run the upgrade command again. An AP-416 refusal keeps the journal; wait for node startup to
+  finish or resolve the inspection problem, then run the upgrade command again. Until recovery finishes,
+  `alphapool-node status` says that an upgrade was cut short.
 - **Exit code 3 (AP-513)** means: the new programs are in place, but the gateway, which ran before, is not back yet
   because the node has not caught up with the network. Until it is back your rigs have no work from this server.
   The gateway starts by itself; `alphapool-node status` shows when. An upgrade that was cut short and finished
