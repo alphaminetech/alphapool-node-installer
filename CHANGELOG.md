@@ -1,5 +1,13 @@
 # Changelog
 
+## unreleased
+
+- The fast start's Bitcoin Knots build (29.4.2 + PR #444, snapshot 976000) is now verified like the official release:
+  `SHA256SUMS` and `SHA256SUMS.asc` are published next to its archive and must carry a valid signature from a pinned
+  release builder key (chrisguida's, one of the seven 29.4.2 builders, so far; the attestations live on
+  https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 and more are being solicited). The sha256 pin stays as
+  the second check. The mode's label and trust notice say so; nothing else changes.
+
 ## 2026-10-09.1
 
 - Flush the complete plan before asking for confirmation; print each console step once without redrawing the login prompt. Linux console output is English only; SSH retains Chinese.

@@ -22,11 +22,11 @@ Bitcoin node and the gateway your rigs connect to. Contabo writes "we fully supp
 
 ### Default fast start (2026-10-09.1)
 
-New nodes use Chris Guida's Bitcoin Knots 29.4.2 + PR444 build and snapshot **976000**, pinned by the archive and snapshot SHA256 values in this installer. The total start is **about half an hour**, depending on download speed and the blocks left to validate; status reports measured progress and time left.
+New nodes use Chris Guida's Bitcoin Knots 29.4.2 + PR444 build and snapshot **976000**: the build is verified by the release-builder signatures on its `SHA256SUMS` (published next to the archive) plus the archive sha256 pinned here, and the snapshot by its pinned sha256 and then by Bitcoin Knots itself. The total start is **about half an hour**, depending on download speed and the blocks left to validate; status reports measured progress and time left.
 
-This developer build is pinned by its sha256 and is not signed by the release builders; when the signed release includes this snapshot, the upgrade command moves your node to that release.
+The build is the official 29.4.2 source plus the one chainparams commit of PR #444, reproduced with Guix and attested on https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 (one of the seven 29.4.2 release builders so far; more attestations are being solicited). When a signed Bitcoin Knots release includes this snapshot, the upgrade command moves your node to that release.
 
-这个开发者构建版按 sha256 固定，发布构建者没有为它签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
+该构建版是官方 29.4.2 源码加上 PR #444 的一个 chainparams 提交，用 Guix 复现并在 https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 上签署（目前为 29.4.2 的七位发布构建者之一，正在征集更多签名）；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
 
 Use `--start official` for the builder-signed release and its 910000 snapshot (one to two days). Existing .6 nodes keep their mode and chain state on upgrade and continue catching up; changing the default does not load a new snapshot over existing data. There is no torrent download or seeding in this version. The detailed 910000 timings below describe the official option.
 
