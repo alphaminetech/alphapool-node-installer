@@ -11,7 +11,7 @@
 #     hash compiled into it, then validates every block since then by itself (README "How the node gets its chain")
 #   * a firewall that keeps your SSH port open, lets rigs and Bitcoin peers in and keeps everything else closed
 # Every download is pinned below (https URL + sha256) and checked BEFORE it is used. Bitcoin Knots is also checked
-# against its release builders' signatures for the official mode; the fast developer build is sha256-pinned only.
+# against its release builders' signatures (both modes: the fast build's SHA256SUMS.asc is published next to its archive).
 #
 # AlphaPool gets NO access to this server: no SSH keys, no allowlists, no remote commands, no update channel.
 # Your SSH setup is not touched. The optional status heartbeat (only with --node-id and --token) reports sync and
@@ -67,7 +67,7 @@ KNOTS_REQUIRED_VER=""
 KNOTS_REQUIRED_BY_HEIGHT=0
 start_modes(){ cat <<'MODES'
 official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
-fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|pin|840000 880000 910000 976000|976000|about half an hour|a developer build of Bitcoin Knots with the 976000 snapshot|This developer build is pinned by its sha256 and is not signed by the release builders; when the signed release includes this snapshot, the upgrade command moves your node to that release.|这个开发者构建版按 sha256 固定，发布构建者没有为它签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
+fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|builders|840000 880000 910000 976000|976000|about half an hour|Bitcoin Knots 29.4.2 plus the 976000 snapshot entry (PR #444), signed by a release builder|You trust the Bitcoin Knots release builders who have signed this build: it is the official 29.4.2 source plus the one chainparams commit of PR #444, reproduced with Guix and attested on https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 (one builder so far, more requested); the installer checks those signatures against the pinned builder keys, and when a signed release includes this snapshot the upgrade command moves your node to that release.|您信任为这个构建版签名的 Bitcoin Knots 发布构建者：它是官方 29.4.2 源码加上 PR #444 的一个 chainparams 提交，用 Guix 复现并在 https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 上签署（目前一位构建者，正在征集更多）；安装程序用固定的构建者密钥检查这些签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
 MODES
 }
 # utxo_table: the snapshot files, one line each:
