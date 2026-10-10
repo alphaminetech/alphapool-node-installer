@@ -27,7 +27,7 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-09.1"
+AP_VERSION="2026-10-10.2"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
@@ -67,7 +67,7 @@ KNOTS_REQUIRED_VER=""
 KNOTS_REQUIRED_BY_HEIGHT=0
 start_modes(){ cat <<'MODES'
 official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
-fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|builders|840000 880000 910000 976000|976000|about half an hour|Bitcoin Knots 29.4.2 plus the 976000 snapshot entry (PR #444), signed by a release builder|You trust the Bitcoin Knots release builders who have signed this build: it is the official 29.4.2 source plus the one chainparams commit of PR #444, reproduced with Guix and attested on https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 (one builder so far, more requested); the installer checks those signatures against the pinned builder keys, and when a signed release includes this snapshot the upgrade command moves your node to that release.|您信任为这个构建版签名的 Bitcoin Knots 发布构建者：它是官方 29.4.2 源码加上 PR #444 的一个 chainparams 提交，用 Guix 复现并在 https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 上签署（目前一位构建者，正在征集更多）；安装程序用固定的构建者密钥检查这些签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
+fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|builders|840000 880000 910000 976000|976000|about 35 minutes|Bitcoin Knots 29.4.2 plus the 976000 snapshot entry (PR #444), signed by a release builder|You trust the Bitcoin Knots release builders who have signed this build: it is the official 29.4.2 source plus the one chainparams commit of PR #444, reproduced with Guix and attested on https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 (one builder so far, more requested); the installer checks those signatures against the pinned builder keys, and when a signed release includes this snapshot the upgrade command moves your node to that release.|您信任为这个构建版签名的 Bitcoin Knots 发布构建者：它是官方 29.4.2 源码加上 PR #444 的一个 chainparams 提交，用 Guix 复现并在 https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 上签署（目前一位构建者，正在征集更多）；安装程序用固定的构建者密钥检查这些签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
 MODES
 }
 # utxo_table: the snapshot files, one line each:
@@ -406,6 +406,10 @@ console_note(){
     [ -c "$d" ] && [ -w "$d" ] && timeout 2 bash -c 'printf "\r\n[AlphaPool node] %s\r\n" "$1" > "$2"' _ "$*" "$d" 2>/dev/null
   done
   return 0
+}
+progress_screen(){   # one English progress line on both provider consoles and the login screen
+  console_note "$*"
+  issue_set "$*"
 }
 # /etc/issue.d: the login prompt on the web console shows the install state and, at the end, where rigs connect.
 issue_set(){
@@ -772,7 +776,7 @@ USAGE
                           that block compiled in; the installer asks it before it downloads the file
   --no-torrent            download the snapshot over https only (default: BitTorrent first, when the installer pins
                           the file's info hash; https is the fallback)
-  --no-seed               do not seed the snapshot to other installing nodes after the download (default: up to 2 h)
+  --no-seed               (no effect in this release: seeding is off)
 
 Behaviour
   --yes                   do not ask questions
@@ -870,7 +874,7 @@ parse_args(){
 # ==== settings: flags over the saved node.conf, all validated ==========================================================
 ADDRESS=""; TAG=""; STRATUM_PORT=23334; ALIAS_PORTS=""; PUBLIC_HOST=""; SYNC_MODE=assumeutxo
 UTXO_URL=""; UTXO_SHA256=""; UTXO_BYTES=""; UTXO_HEIGHT=""     # a UTXO snapshot of your own (--utxo-*); empty = the installer's table
-UTXO_TORRENT=on; UTXO_SEED=on                                   # the snapshot over BitTorrent first; seed it afterwards
+UTXO_TORRENT=on; UTXO_SEED=off                                  # the snapshot over BitTorrent first; seeding is off in this release
 SAVED_SYNC=""                                                  # what node.conf said before this run
 FIREWALL=on; PORT_CHECK=on; HEARTBEAT=off; NODE_ID=""; TOKEN=""
 load_settings(){
@@ -971,7 +975,7 @@ validate_choices(){   # how the node gets its chain, and which software: the sam
     [[ $UTXO_HEIGHT =~ ^[1-9][0-9]{0,8}$ ]] || die AP-105 "--utxo-height must be a block height"
   fi
   case "$UTXO_TORRENT" in on|off) ;; *) UTXO_TORRENT=on;; esac
-  case "$UTXO_SEED" in on|off) ;; *) UTXO_SEED=on;; esac
+  case "$UTXO_SEED" in on|off) ;; *) UTXO_SEED=off;; esac
   [ -z "$A_UTXO_URL$A_UTXO_SHA$A_UTXO_BYTES$A_UTXO_HEIGHT" ] || [ "$SYNC_MODE" = assumeutxo ] || die AP-105 "the --utxo-* options go with --sync assumeutxo (the validated start)"
   # software choices: at most one per component
   local n=0
@@ -1367,9 +1371,16 @@ fetch_big(){
   done
   [ "$(stat -c %s "$dest" 2>/dev/null)" = "$total" ] || return 1
 }
-progress_loop(){   # FILE TOTAL LABEL: % done from the blocks actually written (aria2 writes 4 parts at once)
-  local f=$1 total=$2 label=$3 got prev=0 t0 now rate eta pct last_print=0 last_console=0
+progress_loop(){   # FILE TOTAL LABEL [ARIA_PID]: progress; with a pid, enforce the torrent's rolling speed floor
+  local f=$1 total=$2 label=$3 watched=${4:-} got prev=0 t0 now rate eta pct last_print=0 last_console=0
+  local floor grace window marker oldest dt screen_eta
+  local -a sample_t=() sample_b=()
   t0=$(date +%s)
+  floor=$(num_or "${AP_TORRENT_FLOOR_BPS:-}" 8000000)
+  grace=$(num_or "${AP_TORRENT_FLOOR_GRACE_S:-}" 90)
+  window=$(num_or "${AP_TORRENT_FLOOR_WINDOW_S:-}" 120)
+  marker=${WORK:-$RUN}/torrent-floor
+  [ -z "$watched" ] || { rm -f -- "$marker"; sample_t+=("$t0"); sample_b+=("$(on_disk "$f")"); }
   while sleep 10; do
     got=$(( $(stat -c %b "$f" 2>/dev/null || echo 0) * 512 )); [ "$got" -le "$total" ] || got=$total
     now=$(date +%s); pct=$(( got * 100 / total ))
@@ -1382,7 +1393,27 @@ progress_loop(){   # FILE TOTAL LABEL: % done from the blocks actually written (
       say "  $label: $pct% ($(gb "$got") of $(gb "$total") GB, $(( rate / 1000000 )) MB/s$eta)"
       prev=$got; last_print=$now
     fi
-    if [ $(( now - last_console )) -ge 120 ]; then console_note "downloading the $label: $pct%"; last_console=$now; fi
+    if [ $(( now - last_console )) -ge 120 ]; then
+      screen_eta="minutes left still being measured"; [ "$rate" -gt 0 ] && screen_eta="$(( (total - got) / rate / 60 + 1 )) min left"
+      progress_screen "downloading the $label: $pct%, $(( rate / 1000000 )) MB/s, $screen_eta"
+      last_console=$now
+    fi
+    if [ -n "$watched" ]; then
+      sample_t+=("$now"); sample_b+=("$got")
+      while [ "${#sample_t[@]}" -gt 2 ] && [ $(( now - sample_t[0] )) -gt "$window" ]; do
+        sample_t=("${sample_t[@]:1}"); sample_b=("${sample_b[@]:1}")
+      done
+      if [ $(( now - t0 )) -ge "$grace" ]; then
+        oldest=${sample_b[0]}; dt=$(( now - sample_t[0] )); [ "$dt" -gt 0 ] || dt=1
+        rate=$(( (got - oldest) / dt )); [ "$rate" -ge 0 ] || rate=0
+        if [ "$rate" -lt "$floor" ]; then
+          printf 'rate=%s\nelapsed=%s\nwindow=%s\n' "$rate" "$(( now - t0 ))" "$dt" > "$marker"
+          say "  BitTorrent averaged $(( rate / 1000000 )) MB/s over the last $(( dt / 60 )) min: below the $(( floor / 1000000 )) MB/s floor; switching to a fresh https download"
+          kill "$watched" 2>/dev/null
+          return 0
+        fi
+      fi
+    fi
   done
 }
 rstate(){   # restore progress for the status command and the optional heartbeat
@@ -1885,7 +1916,7 @@ status_watch(){
 # give (from your AlphaPool dashboard "My node", or the CHANGELOG in the installer's repository): the same check the
 # first install made. Nothing updates by itself, and AlphaPool cannot push an update: this command is yours to run.
 upgrade_fetch(){
-  local what=${1:-check} url f sha cur ver
+  local what=${1:-check} url d f sha cur ver
   url=$(sed -n 's/^INSTALLER_URL="\(https:[^"]*\)".*/\1/p' "$INSTALLER" | head -1)
   cur=$(sha256sum "$INSTALLER" 2>/dev/null | cut -c1-64)
   [ -n "$url" ] || { echo "no installer URL in $INSTALLER"; exit 1; }
@@ -1894,13 +1925,18 @@ upgrade_fetch(){
     [ "$what" != "$cur" ] || { echo "the installer with sha256 $cur is already on this node; to repeat its upgrade: sudo alphapool-node upgrade"; exit 0; }
   fi
   mkdir -p /var/lib/alphapool/dl && chmod 0700 /var/lib/alphapool /var/lib/alphapool/dl || exit 1
-  f=/var/lib/alphapool/dl/ap-node-published.sh
-  rm -f "$f"
-  curl -fsSL --retry 3 --connect-timeout 20 -o "$f" "$url" || { rm -f "$f"; echo "could not download $url"; exit 1; }
+  [ ! -L /var/lib/alphapool/dl ] && [ "$(stat -c %u /var/lib/alphapool/dl)" = 0 ] || { echo "/var/lib/alphapool/dl is not root's own folder: NOT run"; exit 1; }
+  # Each run gets its own folder, created exclusively (review R6-B1): a second command cannot replace the file this one
+  # checked before it runs it. The download is bounded before its hash is known (R6-B4): at most 4 MiB, 5 minutes.
+  find /var/lib/alphapool/dl -mindepth 1 -maxdepth 1 -name 'upgrade.*' -mmin +1440 -exec rm -rf -- {} + 2>/dev/null
+  d=$(mktemp -d /var/lib/alphapool/dl/upgrade.XXXXXXXX) || { echo "could not make a private download folder"; exit 1; }
+  f=$d/ap-node-published.sh
+  ( ulimit -f 4096; exec curl -fsSL --retry 3 --connect-timeout 20 --max-time 300 --max-filesize 4194304 -o "$f" "$url" ) 2>/dev/null \
+    || { rm -rf -- "$d"; echo "could not download $url (or it is larger than 4 MiB or took more than 5 minutes): NOT run"; exit 1; }
   sha=$(sha256sum "$f" | cut -c1-64); ver=$(sed -n 's/^AP_VERSION="\([^"]*\)".*/\1/p' "$f" | head -1)
   case "$what" in
     check)
-      rm -f "$f"
+      rm -rf -- "$d"
       echo "installed: installer $(val installer_version $ETC/state)  sha256 $cur"
       echo "published: installer ${ver:-?}  sha256 $sha  ($url)"
       if [ "$sha" = "$cur" ]; then echo "this node runs the published installer: nothing to update"; exit 0; fi
@@ -1909,7 +1945,7 @@ upgrade_fetch(){
       echo "  sudo alphapool-node upgrade $sha";;
     *)
       if [ "$sha" != "$what" ]; then
-        rm -f "$f"; echo "the downloaded installer has sha256 $sha, not $what: NOT run (deleted). Check the sha256 on your dashboard and try again."; exit 1
+        rm -rf -- "$d"; echo "the downloaded installer has sha256 $sha, not $what: NOT run (deleted). Check the sha256 on your dashboard and try again."; exit 1
       fi
       echo "installer ${ver:-?} downloaded, sha256 matches: its upgrade now runs (it shows what changes and asks first)"
       exec bash "$f" --upgrade "${@:2}";;
@@ -2796,15 +2832,17 @@ utxo_file_ready(){   # the snapshot file is in the work area, complete, with the
 # ---- the snapshot over BitTorrent -----------------------------------------------------------------------------------------
 # Other installing nodes and the seeders share the load, and a busy https server costs nothing. The pinned info hash is
 # the check: aria2 takes no piece whose hash is not in the metadata the info hash names, and the sha256 check follows
-# as before. The https download stays the fallback: no download speed for 15 minutes ends the torrent attempt.
+# as before. The https download stays the fallback under the rolling speed floor below.
 utxo_torrent_on(){ [ "$UTXO_TORRENT" = on ] && [ -n "$UX_IH" ] && ! is_dry; }
 # utxo_torrent_download FILE: BitTorrent (aria2) into FILE. The source is the pinned .torrent file (fetched, and used only
 # if its info hash is the pinned one) or the magnet link made of the pinned info hash and the pinned trackers. The pieces
 # land in FILE.bt (a torrent's partial file is sparse: https must never "resume" it); a re-run resumes it with aria2
 # re-checking the pieces on disk; giving up deletes it. The metadata is saved next to it (<info hash>.torrent) for the
-# seeding. An https download that was started earlier (FILE.aria2) is left to https. 0 = complete, 1 = give up.
+# seeding. An https download that was started earlier (FILE.aria2) is left to https. After a 90-second grace,
+# progress_loop stops aria2 below the 8 MB/s rolling floor (over 2 minutes); the sparse torrent files are deleted before https starts.
+# 0 = complete, 1 = give up.
 utxo_torrent_download(){
-  local f=$1 dir name part src="" t rc stop=${AP_TORRENT_STOP_S:-900} tr="" x
+  local f=$1 dir name part src="" t rc stop=${AP_TORRENT_STOP_S:-900} tr="" x aria_pid monitor_pid marker
   dir=$(dirname "$f"); name=$(basename "$f").bt; part=$f.bt
   [ ! -e "$f.aria2" ] || return 1
   t=$dir/$UX_IH.torrent
@@ -2815,14 +2853,18 @@ utxo_torrent_download(){
     else rm -f -- "$t"; say "  the .torrent file could not be fetched, or it is not the pinned one: the magnet link is used instead"; fi
   fi
   [ -n "$src" ] || src="magnet:?xt=urn:btih:$UX_IH&dn=$UX_FILE$tr"
-  say "  BitTorrent: other installing nodes and the seeders share the load (no download speed for $(( stop / 60 )) min ends this attempt)"
-  progress_loop "$part" "$UX_BYTES" "UTXO snapshot (torrent)" & BG_PID=$!
+  say "  BitTorrent: other installing nodes and the seeders share the load (after 90 s, below 8 MB/s averaged over the last 2 min switches to https; zero speed still stops after $(( stop / 60 )) min)"
+  marker=${WORK:-$RUN}/torrent-floor; rm -f -- "$marker"
   aria2c -q -c -d "$dir" --index-out="1=$name" --check-integrity=true --file-allocation=none --seed-time=0 \
     --bt-save-metadata=true --bt-stop-timeout="$stop" --bt-max-peers=60 --listen-port=6881-6889 --dht-listen-port=6881-6889 \
     --enable-dht=true --bt-enable-lpd=false --bt-tracker-connect-timeout=20 --bt-tracker-timeout=30 \
-    --max-tries=0 --retry-wait=10 --connect-timeout=20 --timeout=60 --console-log-level=error --summary-interval=0 "$src"; rc=$?
-  kill "$BG_PID" 2>/dev/null; wait "$BG_PID" 2>/dev/null; BG_PID=""
+    --max-tries=0 --retry-wait=10 --connect-timeout=20 --timeout=60 --console-log-level=error --summary-interval=0 "$src" & aria_pid=$!
+  BG_PID=$aria_pid
+  progress_loop "$part" "$UX_BYTES" "UTXO snapshot (torrent)" "$aria_pid" & monitor_pid=$!
+  wait "$aria_pid"; rc=$?
+  kill "$monitor_pid" 2>/dev/null; wait "$monitor_pid" 2>/dev/null; BG_PID=""
   if [ ! -e "$part" ] && [ -e "$f.aria2" ]; then rm -f -- "$f" "$f.aria2"; fi      # aria2 ignored --index-out: no sparse file for https
+  if [ -f "$marker" ]; then rm -f -- "$marker" "$part" "$part.aria2"; return 1; fi
   if [ $rc -ne 0 ]; then say "  the torrent download stopped (aria2 exit $rc)"; rm -f -- "$part" "$part.aria2"; return 1; fi
   [ "$(stat -c %s "$part" 2>/dev/null)" = "$UX_BYTES" ] || { rm -f -- "$part" "$part.aria2"; return 1; }
   rm -f -- "$part.aria2"; mv -T -f -- "$part" "$f"
@@ -2833,6 +2875,7 @@ utxo_torrent_download(){
 # moves and then deletes the file, does not stop it; the space is freed when it ends. If ufw is on, TCP 6881 is allowed
 # meanwhile and removed after. Off: --no-seed. Stop early: systemctl stop alphapool-snapshot-seed
 utxo_seed_start(){
+  return 0   # 2026-10-10.2: seeding is off until its firewall handling and lifetime are fixed (review R6-B2, R6-B3)
   local f=$1 t sd=$VAR/seed
   [ "$UTXO_SEED" = on ] && utxo_torrent_on || return 0
   t=$(dirname "$f")/$UX_IH.torrent
@@ -2895,8 +2938,7 @@ utxo_prepare(){   # step 5 of a validated start
   fi
   [ -n "$UX_BASE" ] || utxo_peek                                             # a snapshot you named: which block is it of?
   if [ -n "$UX_BASE" ] && [ -z "$UPGRADE_KNOTS" ]; then utxo_ask_build; fi      # before 9.6 GB are downloaded
-  utxo_file_ready
-  say "  it is loaded in step 9, when the node is running and has the block headers"
+  say "  the node starts and gets block headers while the snapshot downloads; it is loaded in step 9 when both are ready"
 }
 fast_abort(){   # a validated start that failed: the node is stopped, and stays stopped until the installer runs again
   FAST_OPEN=0
@@ -2916,7 +2958,7 @@ headers_progress(){   # "first pass of two, 47%": from the node's own log (its h
   case "$l" in *Pre-synchronizing*) printf 'first pass of two, %s%%' "$p";; *) printf 'second pass of two, %s%%' "$p";; esac
 }
 fast_wait_headers(){   # the node must have the header of the snapshot's block before it takes the snapshot
-  local t0 now last=0 peers none=0 line h nap=10
+  local t0 now last=0 last_screen=0 peers none=0 line h current nap=10
   is_dry && nap=1
   t0=$(date +%s)
   say "  waiting for the block headers from the network (the node needs the header of block $(sep "$UX_HEIGHT") first)"
@@ -2924,14 +2966,20 @@ fast_wait_headers(){   # the node must have the header of the snapshot's block b
     h=$(cli getblockheader "$UX_BASE" 2>/dev/null | jq -r '.height // empty' 2>/dev/null)
     if [ -n "$h" ]; then
       [ "$h" = "$UX_HEIGHT" ] || die AP-412 "block $UX_BASE is at height $h in this node's chain, not at $UX_HEIGHT: the snapshot does not belong to this chain"
+      progress_screen "block headers complete: $(sep "$h")/$(sep "$UX_HEIGHT")"
       say_t "  the block headers are there ($(dur $(( $(date +%s) - t0 ))))"; return 0
     fi
     now=$(date +%s); peers=$(cli getconnectioncount 2>/dev/null); [[ $peers =~ ^[0-9]+$ ]] || peers=0
     if [ "$peers" -gt 0 ]; then none=0; elif [ "$none" = 0 ]; then none=$now; fi
     if [ $(( now - last )) -ge 60 ]; then
       line=$(headers_progress)
+      current=$(cli getblockchaininfo 2>/dev/null | jq -r '.headers // 0' 2>/dev/null); [[ $current =~ ^[0-9]+$ ]] || current=0
       say "  block headers: ${line:-waiting for the first ones}, $peers peers"
       status_set "step $STEP_N/$TOTAL_STEPS: getting the block headers (${line:-starting}, $peers peers)"
+      if [ $(( now - last_screen )) -ge 120 ]; then
+        progress_screen "syncing block headers: $(sep "$current")/$(sep "$UX_HEIGHT"), $peers peers${line:+, $line}"
+        last_screen=$now
+      fi
       last=$now
     fi
     if [ "$none" != 0 ] && [ $(( now - none )) -ge "$NOPEERS_WAIT" ]; then
@@ -2942,19 +2990,23 @@ fast_wait_headers(){   # the node must have the header of the snapshot's block b
   done
 }
 load_progress(){   # runs beside loadtxoutset: how far the node is, from its own log
-  local l p shown="" nap=20 hashing=0
+  local l p shown="" nap=20 hashing=0 now last_screen=0
   is_dry && nap=1
   while sleep "$nap"; do
     l=$(as_u tail -c 20000 "$CDIR/debug.log" 2>/dev/null | grep -a '\[snapshot\]' | tail -1)
     case "$l" in
       *"coins loaded ("*) p=$(printf '%s' "$l" | sed -n 's/.*coins loaded (\([0-9]*\)[0-9.]*%.*/\1/p')
-        [ -n "$p" ] && [ "$p" != "$shown" ] || continue
-        shown=$p; say "  loading the snapshot: $p% of the coins"; status_set "step $STEP_N/$TOTAL_STEPS: loading the UTXO snapshot: $p%"
-        rstate extracting $(( UX_BYTES / 100 * p )) "$UX_BYTES";;
+        [ -n "$p" ] || continue
+        if [ "$p" != "$shown" ]; then
+          shown=$p; say "  loading the snapshot: $p% of the coins"; status_set "step $STEP_N/$TOTAL_STEPS: loading the UTXO snapshot: $p%"
+          rstate extracting $(( UX_BYTES / 100 * p )) "$UX_BYTES"
+        fi
+        now=$(date +%s)
+        if [ $(( now - last_screen )) -ge 120 ]; then progress_screen "loading the UTXO snapshot: $p% of coins"; last_screen=$now; fi;;
       *"] loaded "*) [ $hashing = 0 ] || continue
         hashing=1; say "  all coins are read. Bitcoin Knots now checks them against the hash that is compiled into it (some minutes)"
         status_set "step $STEP_N/$TOTAL_STEPS: Bitcoin Knots is checking the UTXO snapshot's content"
-        rstate extracting "$UX_BYTES" "$UX_BYTES";;
+        rstate extracting "$UX_BYTES" "$UX_BYTES"; progress_screen "snapshot coins loaded: checking their compiled hash";;
     esac
   done
 }
@@ -2996,6 +3048,10 @@ snapshot_import_refuse(){
 }
 snapshot_import_guard(){
   local state
+  # A boot resume can run before a normally syncing node has brought RPC back.  With neither durable sign of a
+  # validated start, there cannot be a loadtxoutset to protect; later fast-start steps create the journal before
+  # asking this guard again.  Keep refusing on either sign, including a hostile recovery-marker symlink.
+  if [ "${RESUMED:-0}" = 1 ] && ! uj_pending && [ ! -e "$NETWORK_PAUSE" ] && [ ! -L "$NETWORK_PAUSE" ]; then return 0; fi
   state=$(snapshot_import_state)
   case "$state" in
     idle) return 0;;
@@ -3101,7 +3157,7 @@ fast_start(){   # step 9 of a validated start. Every part can be run again: afte
     rm -f "$DL/$UX_FILE" "$DL/$UX_FILE.aria2" "$UJ"; FAST_OPEN=0
     kv_set "$STATE" chain_start network; install_complete; return 0
   fi
-  utxo_file_ready                      # step 5 did this; after a reboot or a failed attempt it is made sure of again
+  utxo_file_ready                      # the running node gets headers in parallel with this download
   [ -z "$UX_BASE" ] || utxo_ask_build
   fast_wait_headers
   fast_load "$DL/$UX_FILE" "$out"
@@ -3122,7 +3178,7 @@ sync_eta_s(){   # seconds left as the gateway starter measures them while it wai
 CATCHUP_WATCH=$(num_or "${AP_CATCHUP_WATCH:-}" 420)       # how long the installer watches before it decides
 CATCHUP_STAY=$(num_or "${AP_CATCHUP_STAY:-}" 2700)        # it stays to the end if the measured time left is at most this
 long_catch_up(){
-  local info b h peers now t0 last=0 lastb=-1 moved every=60 eta secs nap=15
+  local info b h peers now t0 last=0 last_screen=0 lastb=-1 moved every=60 eta secs nap=15
   is_dry && nap=1
   t0=$(date +%s); moved=$t0
   while :; do
@@ -3140,6 +3196,10 @@ long_catch_up(){
       if [ "$h" -gt "$b" ]; then
         say "  validating the blocks since the snapshot: block $(sep "$b") of $(sep "$h"), $(sep $(( h - b ))) left${eta:+, $eta}, $peers peers"
         status_set "validating blocks: $(sep $(( h - b ))) left${eta:+, $eta}"
+        if [ $(( now - last_screen )) -ge 120 ]; then
+          progress_screen "catching up: $(sep $(( h - b ))) blocks left, ${eta:-time left still being measured}"
+          last_screen=$now
+        fi
       else say "  waiting for the node ($peers peers)"; fi
       last=$now
     fi
@@ -3156,9 +3216,9 @@ long_catch_up(){
 CATCHUP_LEFT=0; CATCHUP_ETA=""
 handover_next_steps(){
   say "The install is done and the node keeps working by itself. You can close this window."
-  say "To watch progress here, run: alphapool-node status --watch. Or type exit: the login screen shows the progress and updates every 5 minutes."
+  say "To watch progress here, run: alphapool-node status --watch. Or type exit: the login screen shows the progress and updates every 2 minutes."
   say_zh "安装已经完成，节点会自行继续工作。您可以关闭此窗口。"
-  say_zh "若要在这里查看进度，请运行：alphapool-node status --watch。也可以输入 exit：登录界面会显示进度，每 5 分钟更新一次。"
+  say_zh "若要在这里查看进度，请运行：alphapool-node status --watch。也可以输入 exit：登录界面会显示进度，每 2 分钟更新一次。"
 }
 catchup_handover(){   # the long catch-up goes on without the installer: what is left, how long, where to look
   say ""
@@ -3417,6 +3477,14 @@ login_screen(){   # while the installer works, it writes the login screen itself
   timeout 5 agetty --reload >/dev/null 2>&1
   return 0
 }
+provider_progress(){   # the installer owns both consoles until it is done (it writes its own progress lines)
+  local d
+  [ -e "$ETC/install-in-progress" ] && return 0
+  for d in /dev/tty1 /dev/ttyS0; do
+    [ -c "$d" ] && [ -w "$d" ] && timeout 2 bash -c 'printf "\r\n[AlphaPool node] %s\r\n" "$1" > "$2"' _ "$*" "$d" 2>/dev/null
+  done
+  login_screen "$*"
+}
 rigs_at(){
   local h p
   h=$(val PUBLIC_HOST); [ -n "$h" ] || h=$(val DETECTED_HOST); p=$(val STRATUM_PORT)
@@ -3453,8 +3521,8 @@ while :; do
     fi
     printf 'ts=%s\nblocks=%s\nheaders=%s\nleft=%s\nper_min=%s\neta_s=%s\n' "$now" "$b" "$h" $(( h - b )) "$per_min" "$eta" > "$R/sync-progress.new" \
       && mv -f "$R/sync-progress.new" "$R/sync-progress"
-    if [ $(( now - shown )) -ge "${AP_GATE_SCREEN:-300}" ]; then
-      login_screen "NOT READY yet. The node is validating blocks: $(sep $(( h - b ))) left${eta:+, $(eta_text "$eta") at the current speed}. Keep mining where you are until this says READY. Status: alphapool-node status"
+    if [ $(( now - shown )) -ge "${AP_GATE_SCREEN:-120}" ]; then
+      provider_progress "NOT READY yet. The node is validating blocks: $(sep $(( h - b ))) left${eta:+, $(eta_text "$eta") at the current speed}. Keep mining where you are until this says READY. Status: alphapool-node status"
       shown=$now
     fi
   else rm -f "$R/sync-progress"; T=(); B=(); fi
@@ -3466,12 +3534,12 @@ own=$(val ADDRESS); n=0
 for _ in $(seq 1 "${AP_GATE_JOB_TRIES:-30}"); do
   n=$(timeout 3 curl -sS "$GW_API/coinbaser" 2>/dev/null | head -c 200000 | grep -oE 'bc1[a-z0-9]{20,}|[13][A-Za-z0-9]{25,}' | sort -u | grep -cvxF "${own:-none}")
   if [ "${n:-0}" -gt 0 ]; then
-    login_screen "READY - point your rigs at $(rigs_at) (worker: anything). Status: alphapool-node status"
+    provider_progress "READY - point your rigs at $(rigs_at) (worker: anything). Status: alphapool-node status"
     exit 0
   fi
   sleep "${AP_GATE_JOB_SLEEP:-10}"
 done
-login_screen "the node is at the chain tip and the gateway runs, but it has no AlphaPool job yet. Check: alphapool-node status"
+provider_progress "the node is at the chain tip and the gateway runs, but it has no AlphaPool job yet. Check: alphapool-node status"
 exit 0
 GATE
   chmod 0755 "$LIB/start-gateway-when-synced.new" && mv -f "$LIB/start-gateway-when-synced.new" "$LIB/start-gateway-when-synced"

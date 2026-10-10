@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## 2026-10-10.2
+
+- The BitTorrent attempt switches to the https download sooner: after a 90-second grace, below 8 MB/s averaged
+  over the last two minutes (was three minutes and 2 MB/s over five). Measured on a real server: the swarm needs one to
+  two minutes to ramp up; https gives about 20 MB/s.
+- `alphapool-node upgrade check` and `upgrade <sha256>` download into a private folder created for that one run and
+  never larger than 4 MiB or longer than 5 minutes, so a second command cannot swap the file that one run checked
+  (independent review R6-B1, R6-B4).
+- Seeding the snapshot to other nodes after the download is off in this release, and with it every firewall change
+  for it (review R6-B2, R6-B3). The torrent download and its switch to https stay.
+- During the install the provider console no longer shows the background status line ("validating blocks: N
+  left" counted the header sync); the installer's own progress lines are the only ones until it is done.
+
+## 2026-10-10.1
+
+- Start Bitcoin Knots before the snapshot download so it gets block headers in parallel. The snapshot is loaded only
+  after the file and its headers are both ready; networking is still durably paused during `loadtxoutset`, with the
+  existing AP-415/AP-416 recovery guards unchanged.
+- After a three-minute grace, a torrent below 2 MB/s averaged over up to the last five minutes is stopped. Its sparse
+  partial file is deleted and a fresh, resumable https download takes over. The 15-minute zero-speed timeout remains.
+- During the download, header sync, snapshot load and catch-up, the provider console and login screen receive one
+  English progress line at most every two minutes. The default fast-route estimate is now about 35 minutes.
+- Tests cover the merged update command and soft-fork warning, the torrent path and fallback, and builder-signature
+  verification of the fast start row.
+- A reboot while repeating an ordinary network-sync install resumes without treating the node's brief RPC startup
+  delay as an unknown snapshot import. Either durable validated-start marker still keeps the AP-416 refusal.
+
 - `alphapool-node upgrade check` says whether a newer installer is published (it downloads it and runs nothing);
   `alphapool-node upgrade <sha256>` downloads it, refuses it unless the sha256 is the one you give, then runs its
   upgrade. Nothing updates by itself and AlphaPool cannot push one (README "Updates").
