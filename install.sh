@@ -7,7 +7,9 @@
 # Needs Ubuntu 22.04 or 24.04 LTS (x86_64), 4 GB RAM and 80 GB disk. It installs:
 #   * Bitcoin Knots as a pruned node: the node that builds your blocks (the version is pinned below)
 #   * AlphaPool's DATUM gateway: makes block templates from YOUR node; your rigs connect to it (pinned below)
-#   * the validated start for the chain: the node loads a UTXO snapshot that Bitcoin Knots itself checks against a
+#   * the chain: by default AlphaPool's chain copy (the blocks/ and chainstate/ folders of a pruned AlphaPool node at
+#     the tip, sha256-pinned below): ready in under an hour, no background history check. Or the validated start
+#     (--start fast or --start official): the node loads a UTXO snapshot that Bitcoin Knots itself checks against a
 #     hash compiled into it, then validates every block since then by itself (README "How the node gets its chain")
 #   * a firewall that keeps your SSH port open, lets rigs and Bitcoin peers in and keeps everything else closed
 # Every download is pinned below (https URL + sha256) and checked BEFORE it is used. A Bitcoin Knots build that carries
@@ -28,17 +30,18 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-15.1"
+AP_VERSION="2026-10-15.2"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
-# ---- Start modes: the Bitcoin Knots build a node runs, and the UTXO snapshot a new node starts from ------------------
-# A new node loads a UTXO snapshot (the set of all unspent coins at one block), validates every block since then by
+# ---- Start modes: the Bitcoin Knots build a node runs, and the UTXO snapshot a validated start begins from -----------
+# A new node gets its chain in one of three ways (--sync): AlphaPool's chain copy (copy, the default: see the COPY_*
+# pins below), the validated start (assumeutxo), or a full sync from the network (network). In the validated start
+# the node loads a UTXO snapshot (the set of all unspent coins at one block), validates every block since then by
 # itself, and checks the whole history before the snapshot in the background. A Bitcoin Knots build takes a snapshot
 # only at the block heights compiled into it, and it checks the snapshot's content against a hash that is compiled in
-# as well. So a way to start is a pair: a Bitcoin Knots build, and the snapshot it starts from. That pair is a START
-# MODE. (AlphaPool's pre-synced copy of a node's chain folders, the start of installers before 2026-10-08.1, is gone:
-# a node validates its chain itself.)
+# as well. So a validated start is a pair: a Bitcoin Knots build, and the snapshot it starts from. That pair is a START
+# MODE. The mode also names the build a node runs with the chain copy or the network sync.
 # start_modes has one line per mode, fields separated by "|":
 #    1 name                what --start takes
 #    2 Knots version       what `bitcoind -version` of that build says
@@ -54,7 +57,8 @@ INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cl
 #    9 label               how the installer and the dashboard call the mode
 #   10 what you trust      one sentence in English
 #   11 Chinese notice      optional translation of that sentence
-# START_DEFAULT is the mode of a new install; --start NAME takes another one. START_LEGACY is the mode of nodes that
+# START_DEFAULT is the mode of a new install; --start NAME takes another one (and, unless --sync says otherwise, the
+# validated start of that mode instead of the chain copy). START_LEGACY is the mode of nodes that
 # were installed before modes existed (they run the official release). Another Bitcoin Knots release, a newer
 # snapshot or another mode is a change of these lines and of utxo_table, and of nothing else. Nodes that are installed
 # keep their mode and their chain; `alphapool-node upgrade` moves them to their mode's build in the new installer.
@@ -87,6 +91,25 @@ TABLE
 }
 UTXO_TRACKERS="udp://tracker.opentrackr.org:1337/announce udp://open.stealth.si:80/announce udp://tracker.torrent.eu.org:451/announce udp://exodus.desync.com:6969/announce"
 UTXO_SEED_MINUTES=120     # after the download: seed the snapshot to other installing nodes for at most this long (share ratio 2)
+# ---- AlphaPool's chain copy: how a new node gets its chain by default (--sync copy) ----------------------------------
+# One tar file that holds exactly two folders, blocks/ and chainstate/, of a pruned AlphaPool node (prune=4000, the
+# setting this installer writes) that was at the chain tip at COPY_HEIGHT; it was packed while that node was stopped,
+# so the two folders agree. Nothing else is in it: no wallet, no settings, no peers. The file's sha256 is checked
+# before anything is unpacked, and the node user's own process unpacks it into the node's folder. The node then
+# validates every block after COPY_HEIGHT by itself, like any node, and there is no history check in the background.
+# A newer copy is a change of these lines and of nothing else; nodes that are installed keep their chain.
+SYNC_DEFAULT="copy"
+COPY_URL="https://snapshots.alphapool.tech:8444/xbt/xbt-chain-20261015T1103Z.tar"
+COPY_SHA256="8ba30b034b5d1746837ea96956b3d7735cf526bb48948fd38526e8e8665a6fd6"
+COPY_BYTES=13984286720
+COPY_HEIGHT=977343
+COPY_BLOCK="00000000000000006358525fbff60b3fc4e5c1daef266e102305faa2046416f0"
+COPY_ABOUT="under an hour"
+COPY_TRUST="You trust AlphaPool for this chain copy: it is the blocks and chainstate folders of a pruned AlphaPool node that was at the chain tip, packed while that node was stopped. The installer checks the file against the sha256 pinned here; your node validates every block after the copy by itself, but not the history before it."
+COPY_TRUST_ZH="您为这份链数据副本信任 AlphaPool：它是一个已同步到链顶端的 AlphaPool 修剪节点的 blocks 和 chainstate 文件夹，在该节点停止时打包。安装程序用这里固定的 sha256 检查该文件；您的节点会自行验证副本之后的每个区块，但不验证副本之前的历史。"
+# The choice in one sentence (the plan, --help and the guides say it the same way)
+SYNC_TRADEOFF="The chain copy is ready in $COPY_ABOUT and has no background history check, so your node keeps up with new blocks from the start, but you trust AlphaPool that the copy is correct; the validated start (--start fast or --start official) trusts only the snapshot hash compiled into Bitcoin Knots, but its background history check takes a day or more and can make a small server fall behind new blocks."
+SYNC_TRADEOFF_ZH="链数据副本不到一小时即可就绪，且没有后台历史检查，您的节点从一开始就能跟上新区块，但您需要信任 AlphaPool 提供的副本是正确的；验证启动（--start fast 或 --start official）只信任编译进 Bitcoin Knots 的快照哈希，但其后台历史检查需要一天或更久，并可能让小型服务器落后于新区块。"
 # The Bitcoin Knots pin of this run is the build of the node's start mode: mode_apply sets these four (and M_*).
 KNOTS_VER=""; KNOTS_URL=""; KNOTS_SHA256=""; KNOTS_VERIFY=""
 M_NAME=""; M_VER=""; M_URL=""; M_SHA=""; M_VERIFY=""; M_KNOWS=""; M_HEIGHT=""; M_ABOUT=""; M_LABEL=""; M_TRUST=""; M_TRUST_ZH=""
@@ -319,6 +342,7 @@ SETS=$LIB/sets                  # the software sets: one directory per installed
 CUR=$LIB/current                # link to the active set
 JOURNAL=$ETC/upgrade.journal    # there while an upgrade is in flight: previous set, new set, step
 UJ=$ETC/validated-start.journal # there while a validated start is not finished: which UTXO snapshot it uses
+COPY_MARK=$DD/.alphapool-restore-in-progress   # there while the chain copy is unpacked (the node user makes and removes it)
 NETWORK_PAUSE=$ETC/network-paused # durable intent: this installer paused a node that had networking enabled
 case "$NODE_CHAIN" in main) CDIR=$DD;; *) CDIR=$DD/$NODE_CHAIN;; esac   # where the node keeps blocks/ and chainstate/
 RUN=/run/alphapool
@@ -618,6 +642,15 @@ tar_safe(){
   rm -f "$l" "$n"
   [ "$bad" -eq 0 ]
 }
+tar_only_chain(){   # the chain copy holds blocks/ and chainstate/ only: no wallets, no settings, nothing else
+  local n bad
+  n=$(mktemp ${WORK:+-p "$WORK"}) || return 1
+  tar -tf "$1" > "$n" 2>/dev/null || { rm -f "$n"; return 1; }
+  bad=$(grep -cvE '^(\./)?(blocks|chainstate)(/|$)' "$n")
+  [ -s "$n" ] || bad=1
+  rm -f "$n"
+  [ "$bad" -eq 0 ]
+}
 
 # ==== input validation (also used by the tests and by --check) =========================================================
 # Payout address: what the DATUM gateway can pay. Legacy P2PKH (1...), P2SH (3...), segwit v0 P2WPKH/P2WSH and v1 P2TR
@@ -760,15 +793,23 @@ Software (default: AlphaPool's tested Bitcoin Knots $KNOTS_VER and DATUM gateway
 USAGE
   cat <<USAGE
 How the node gets its chain
-  (default)               the validated start: your node loads the UTXO snapshot whose block and content hash are
-                          compiled into its Bitcoin Knots, then validates every block since then by itself. With
-                          the default start mode that takes $M_ABOUT on a small server; you see the blocks
-                          left and the time left. The history before the snapshot is checked in the background.
-                          Keep mining where you are until the installer, or alphapool-node status, says READY
-  --start NAME            the start mode: the Bitcoin Knots build the node runs and the snapshot it starts from.
+  (default)               AlphaPool's chain copy: the blocks and chainstate folders of a pruned AlphaPool node at
+                          block $(sep "$COPY_HEIGHT") ($(gb "$COPY_BYTES") GB download, sha256 pinned in this installer). Ready in
+                          $COPY_ABOUT; your node validates every block after the copy by itself. Same as --sync copy
+$(printf '%s\n' "$COPY_TRUST" | fold -s -w 88 | sed 's/ *$//; s/^/                          /')
+  --start NAME            the validated start of a start mode instead: the Bitcoin Knots build the node runs and the
+                          UTXO snapshot it starts from (whose block and content hash are compiled into that build).
+                          The node validates every block since the snapshot by itself, and checks the history before
+                          it in the background. Keep mining where you are until the installer, or alphapool-node
+                          status, says READY. With the chain copy or the network sync, NAME picks the build only.
                           This installer has:
 $(mode_help)
+  --sync assumeutxo       the validated start of the default start mode ($START_DEFAULT)
   --sync network          sync everything from the Bitcoin network yourself: takes days on a small server
+  --sync copy             AlphaPool's chain copy (the default)
+$(printf '%s\n' "$SYNC_TRADEOFF" | fold -s -w 88 | sed 's/ *$//; s/^/                          /')
+  --snapshot-url URL      download the chain copy from a mirror instead (it must be the very file pinned here: its
+                          sha256 is checked the same way)
 USAGE
   cat <<'USAGE'
   --utxo-height N         the validated start from another UTXO snapshot of this installer's list (by block height)
@@ -811,7 +852,7 @@ mode_help(){   # the start modes of this installer, for --help (in a subshell: t
   local n
   for n in $(mode_names); do
     ( mode_load "$n" || exit 0
-      printf '                            %s%s: %s\n' "$M_NAME" "$([ "$M_NAME" = "$START_DEFAULT" ] && echo ' (the default)')" "$M_LABEL"
+      printf '                            %s%s: %s\n' "$M_NAME" "$([ "$M_NAME" = "$START_DEFAULT" ] && { [ "$SYNC_DEFAULT" = copy ] && echo ' (the default build)' || echo ' (the default)'; })" "$M_LABEL"
       { printf 'Bitcoin Knots %s; the snapshot of block %s; then %s of validating on a small server. ' "$M_VER" "$(sep "$M_HEIGHT")" "$M_ABOUT"
         [ "$M_VERIFY" = builders ] || printf 'NOT signed by the Bitcoin Knots release builders: pinned by its sha256 in this installer. '
         printf '%s\n' "$M_TRUST"; } | fold -s -w 88 | sed 's/ *$//; s/^/                              /'
@@ -873,7 +914,9 @@ parse_args(){
 }
 
 # ==== settings: flags over the saved node.conf, all validated ==========================================================
-ADDRESS=""; TAG=""; STRATUM_PORT=23334; ALIAS_PORTS=""; PUBLIC_HOST=""; SYNC_MODE=assumeutxo
+ADDRESS=""; TAG=""; STRATUM_PORT=23334; ALIAS_PORTS=""; PUBLIC_HOST=""; SYNC_MODE=$SYNC_DEFAULT
+COPY_SRC=$COPY_URL                                              # where the chain copy comes from (--snapshot-url: a mirror)
+COPY_FILE=${COPY_URL##*/}                                       # its name in the work area while it downloads (a re-run resumes it)
 UTXO_URL=""; UTXO_SHA256=""; UTXO_BYTES=""; UTXO_HEIGHT=""     # a UTXO snapshot of your own (--utxo-*); empty = the installer's table
 UTXO_TORRENT=on; UTXO_SEED=off                                  # the snapshot over BitTorrent first; seeding is off in this release
 SAVED_SYNC=""                                                  # what node.conf said before this run
@@ -887,6 +930,7 @@ load_settings(){
   v=$(kv_get "$CONF" ALIAS_PORTS) && ALIAS_PORTS=$v
   v=$(kv_get "$CONF" PUBLIC_HOST) && PUBLIC_HOST=$v
   v=$(kv_get "$CONF" SYNC_MODE) && { SYNC_MODE=$v; SAVED_SYNC=$v; }
+  v=$(kv_get "$CONF" SNAPSHOT_URL) && [ -n "$v" ] && COPY_SRC=$v
   if v=$(kv_get "$CONF" START_MODE) && [ -n "$v" ]; then START_MODE=$v; else START_MODE=$START_LEGACY; fi      # a node from before modes existed
   v=$(kv_get "$CONF" FIREWALL) && FIREWALL=$v
   v=$(kv_get "$CONF" PORT_CHECK) && PORT_CHECK=$v
@@ -908,6 +952,9 @@ apply_flags(){
   [ -n "$A_PUBLIC" ] && PUBLIC_HOST=$A_PUBLIC
   [ -n "$A_SYNC" ] && SYNC_MODE=$A_SYNC
   [ -n "$A_START" ] && START_MODE=$A_START
+  # a start mode or a UTXO snapshot you name is a validated start, unless --sync says how the node gets its chain
+  [ -z "$A_SYNC" ] && [ -n "$A_START$A_UTXO_URL$A_UTXO_SHA$A_UTXO_BYTES$A_UTXO_HEIGHT" ] && SYNC_MODE=assumeutxo
+  [ -n "$A_SNAP_MIRROR" ] && COPY_SRC=$A_SNAP_MIRROR
   [ -n "$A_FIREWALL" ] && FIREWALL=$A_FIREWALL
   [ -n "$A_PORTCHECK" ] && PORT_CHECK=$A_PORTCHECK
   [ -n "$A_UTXO_URL" ] && UTXO_URL=$A_UTXO_URL
@@ -963,11 +1010,12 @@ validate_settings(){
 }
 validate_choices(){   # how the node gets its chain, and which software: the same rules for an install and for cloud-init user data
   mode_apply || die AP-105 "'$START_MODE' is not a start mode of this installer. It has: $(mode_names). Choose one with --start."
-  # AlphaPool's pre-synced chain copy is gone: a node validates the chain itself. A node that was installed with it keeps its chain.
-  [ "$A_SYNC" != snapshot ] || die AP-105 "--sync snapshot (AlphaPool's pre-synced chain copy) is not offered any more: a node validates its chain itself. Leave --sync out for the validated start, or use --sync network."
-  [ -z "$A_SNAP_MIRROR" ] || die AP-105 "--snapshot-url belonged to the pre-synced chain copy, which is not offered any more"
-  [ "$SYNC_MODE" != snapshot ] || SYNC_MODE=assumeutxo
-  case "$SYNC_MODE" in network|assumeutxo) ;; *) die AP-105 "--sync must be assumeutxo (the validated start, the default) or network";; esac
+  # "snapshot" is what installers before 2026-10-08.1 called AlphaPool's chain copy (and saved in node.conf)
+  [ "$A_SYNC" != snapshot ] || die AP-105 "--sync snapshot is called --sync copy now (AlphaPool's chain copy, the default)"
+  [ "$SYNC_MODE" != snapshot ] || SYNC_MODE=copy
+  case "$SYNC_MODE" in copy|network|assumeutxo) ;; *) die AP-105 "--sync must be copy (AlphaPool's chain copy, the default), assumeutxo (the validated start) or network";; esac
+  url_ok "$COPY_SRC" || die AP-105 "--snapshot-url needs an https URL (a mirror of the very chain copy this installer pins)"
+  [ -z "$A_SNAP_MIRROR" ] || [ "$SYNC_MODE" = copy ] || die AP-105 "--snapshot-url goes with the chain copy (--sync copy, the default)"
   # a UTXO snapshot of your own: all four values. Or the height alone, to take that line of the installer's table.
   if [ -n "$UTXO_URL$UTXO_SHA256$UTXO_BYTES" ]; then
     { url_ok "$UTXO_URL" && sha_ok "$UTXO_SHA256" && [[ $UTXO_BYTES =~ ^[1-9][0-9]{0,14}$ ]] && [[ $UTXO_HEIGHT =~ ^[1-9][0-9]{0,8}$ ]]; } \
@@ -1102,6 +1150,7 @@ check_network(){
   fi
   local big="" big_bytes=0 big_what=""
   if [ "$CHAIN_PRESENT" = 0 ] && [ "$SYNC_MODE" = assumeutxo ]; then big=$UX_URL; big_bytes=$UX_BYTES; big_what="UTXO snapshot"; fi
+  if [ "$CHAIN_PRESENT" = 0 ] && [ "$SYNC_MODE" = copy ]; then big=$COPY_SRC; big_bytes=$COPY_BYTES; big_what="chain copy"; fi
   for host in "$POOL_HOST" "${KNOTS_URL#https://}" "${PIN_GW_URL#https://}" "${big#https://}"; do
     [ -n "$host" ] || continue
     host=${host%%/*}; host=${host%%:*}
@@ -1145,11 +1194,11 @@ check_network(){
   say "  network: AlphaPool and the download servers are reachable"
 }
 CHAIN_PRESENT=0
-# chain_there: the node has chain data. What an installer before 2026-10-08.1 left of an unpack that was cut short
-# (its marker is still there) does not count: step 5 removes it.
+# chain_there: the node has chain data. What is left of an unpack of the chain copy that was cut short (its marker is
+# still there) does not count: step 5 removes it.
 chain_there(){
   id -u "$U" >/dev/null 2>&1 || return 1
-  has_u -e "$DD/.alphapool-restore-in-progress" && return 1
+  has_u -e "$COPY_MARK" && return 1
   has_u -e "$CDIR/blocks" || has_u -e "$CDIR/chainstate" || has_u -e "$CDIR/chainstate_snapshot"
 }
 chain_present(){   # sets CHAIN_PRESENT: 1 = this server has chain data that is kept as it is
@@ -1174,6 +1223,9 @@ preflight(){
   local cpus; cpus=$(nproc 2>/dev/null || echo 1)
   [ "$cpus" -ge 2 ] || warn "this server has 1 CPU; 2 or more are recommended"
   chain_present
+  if [ "$SYNC_MODE" = copy ] && uj_pending; then        # the node has started a validated start here: its folder is not empty
+    die AP-105 "this server has a validated start that is not finished. Finish it: run the installer again with --sync assumeutxo. For AlphaPool's chain copy instead, uninstall first (sudo alphapool-node uninstall), then install again."
+  fi
   local need_dl=0 need_home avail have=0
   if [ "$CHAIN_PRESENT" = 1 ]; then need_home=$(( 4 * 1000**3 ))
   else case "$SYNC_MODE" in
@@ -1184,9 +1236,14 @@ preflight(){
                   need_dl=$(( UX_BYTES - have )); [ "$need_dl" -ge 0 ] || need_dl=0
                 fi
                 need_home=$(( 30 * 1000**3 ));;                    # the chain state the snapshot becomes, the blocks, the history check
+    copy)       plain_own "$DL/$COPY_FILE" && have=$(on_disk "$DL/$COPY_FILE")
+                need_dl=$(( COPY_BYTES - have )); [ "$need_dl" -ge 0 ] || need_dl=0
+                need_home=$(( COPY_BYTES + 6 * 1000**3 ));;        # the unpacked copy, and room for new blocks
     network)    need_home=$(( 30 * 1000**3 ));;
   esac; fi
-  space_for "$need_dl" "$need_home" || die AP-206 "this server has $(gb "$SP_AVAIL") GB of free disk$SP_WHERE; the node needs $(gb "$SP_NEED") GB now (the UTXO snapshot file, the chain state it becomes, and room for blocks). Pick a plan with 80 GB or more."
+  local what="the UTXO snapshot file, the chain state it becomes, and room for blocks"
+  [ "$SYNC_MODE" != copy ] || what="the chain copy, its unpacked folders, and room for blocks"
+  space_for "$need_dl" "$need_home" || die AP-206 "this server has $(gb "$SP_AVAIL") GB of free disk$SP_WHERE; the node needs $(gb "$SP_NEED") GB now ($what). Pick a plan with 80 GB or more."
   avail=$SP_AVAIL
   say "  server: $OS_PRETTY, $cpus CPU, ${MEM_MB} MB memory, $(gb "$avail") GB free"
   local p
@@ -1244,6 +1301,18 @@ show_plan(){
         say "                   then validates every block since then by itself: $(catchup_about). You see the blocks left"
         say "                   and the time left. KEEP YOUR RIGS MINING WHERE THEY ARE until this says READY."
       else say "  chain data     : the validated start (the UTXO snapshot is chosen once your Bitcoin Knots build is installed)"; fi;;
+    copy)
+      if [ "$CHAIN_PRESENT" = 1 ]; then say "  chain data     : keep the chain data already on this server"
+      else
+        say "  chain data     : AlphaPool's chain copy of block $(sep "$COPY_HEIGHT") ($(gb "$COPY_BYTES") GB download from ${COPY_SRC#https://},"
+        say "                   sha256 checked before it is unpacked). The node then validates every newer block by itself:"
+        say "                   ready in $COPY_ABOUT. KEEP YOUR RIGS MINING WHERE THEY ARE until this says READY."
+        printf '%s\n' "$COPY_TRUST" | fold -s -w 96 | sed 's/ *$//; s/^/                   /'
+        [ -z "$COPY_TRUST_ZH" ] || say_zh "                   $COPY_TRUST_ZH"
+        say "                   Other ways: --start fast or --start official (the validated start), --sync network."
+        printf '%s\n' "$SYNC_TRADEOFF" | fold -s -w 96 | sed 's/ *$//; s/^/                   /'
+        [ -z "$SYNC_TRADEOFF_ZH" ] || say_zh "                   $SYNC_TRADEOFF_ZH"
+      fi;;
     network) say "  chain data     : full sync from the Bitcoin network (days on a small server)";; esac
   if [ "$FIREWALL" = on ]; then say "  firewall (ufw) : allow SSH port(s) $SSH_PORTS, stratum $STRATUM_PORT${ALIAS_PORTS:+ $ALIAS_PORTS}, Bitcoin peers 8333; deny other incoming"
   else say "  firewall       : left as it is (--firewall off)"; fi
@@ -1266,6 +1335,7 @@ save_settings(){
   kv_set "$CONF" ADDRESS "$ADDRESS"; kv_set "$CONF" TAG "$TAG"
   kv_set "$CONF" STRATUM_PORT "$STRATUM_PORT"; kv_set "$CONF" ALIAS_PORTS "$ALIAS_PORTS"
   kv_set "$CONF" PUBLIC_HOST "$PUBLIC_HOST"; kv_set "$CONF" SYNC_MODE "$SYNC_MODE"; kv_set "$CONF" START_MODE "$START_MODE"
+  kv_set "$CONF" SNAPSHOT_URL "$([ "$COPY_SRC" = "$COPY_URL" ] || printf '%s' "$COPY_SRC")"     # empty unless you named a mirror
   kv_set "$CONF" FIREWALL "$FIREWALL"; kv_set "$CONF" PORT_CHECK "$PORT_CHECK"
   kv_set "$CONF" HEARTBEAT "$HEARTBEAT"; kv_set "$CONF" NODE_ID "$NODE_ID"; kv_set "$CONF" SSH_PORTS "$SSH_PORTS"
   kv_set "$CONF" UTXO_URL "$UTXO_URL"; kv_set "$CONF" UTXO_SHA256 "$UTXO_SHA256"       # empty unless you named a snapshot of your own
@@ -1850,6 +1920,8 @@ status(){
     echo "  chain    : validated start; the history check is complete: this node has validated the whole chain itself"
   elif [ "${ncs:-0}" = 1 ] && [ "$(val chain_start $ETC/state)" = assumeutxo ]; then
     echo "  chain    : validated by this node itself (validated start, history check complete)"
+  elif [ "$(val chain_start $ETC/state)" = presynced ]; then
+    echo "  chain    : AlphaPool's chain copy${sh:+ of block $(sep "$sh")}; this node validates every newer block itself (no history check)"
   fi
   if [ "$gs" = active ]; then
     if [ "$payees" -gt 0 ]; then echo "  gateway  : active, connected to AlphaPool (live job with $payees payouts)"
@@ -3239,21 +3311,75 @@ catchup_handover(){   # the long catch-up goes on without the installer: what is
 # ==== step 5: chain data ===============================================================================================
 step_chain(){
   step 5 "Chain data"
-  [ "$SYNC_MODE" = assumeutxo ] || uj_drop
-  if has_u -e "$DD/.alphapool-restore-in-progress"; then
-    # An installer before 2026-10-08.1 was unpacking AlphaPool's pre-synced chain copy here and was cut short. That
-    # copy is gone; what is left of the unpack is removed, by a process of the node user (its own folder).
-    say "  an unpack of an earlier installer was cut short here: its partial chain data is removed"
-    as_u rm -rf "$DD/blocks" "$DD/chainstate"
-    as_u rm -f "$DD/.alphapool-restore-in-progress"
+  [ "$SYNC_MODE" = assumeutxo ] || ! uj_pending || uj_drop      # another way than an unfinished validated start: it is dropped
+  if has_u -e "$COPY_MARK"; then
+    # An unpack of AlphaPool's chain copy (by this installer, or by one before 2026-10-08.1) was cut short. What is
+    # left of it is removed, by a process of the node user (its own folder); then the chosen way runs as on a new server.
+    say "  an unpack of the chain copy was cut short here: its partial chain data is removed"
+    as_u rm -rf "$CDIR/blocks" "$CDIR/chainstate"
+    as_u rm -f "$COPY_MARK"
   elif uj_pending; then :                                   # a validated start that is not finished: it goes on below
   elif chain_there; then
     say "  chain data is already on this server: kept (never wiped)"; rstate skipped; return 0
   fi
   case "$SYNC_MODE" in
     network) say "  no snapshot: the node syncs from the Bitcoin network (this takes days on a small server)"; rstate skipped;;
+    copy)    copy_unpack;;
     *)       utxo_prepare;;
   esac
+}
+# copy_unpack: AlphaPool's chain copy. Downloaded into the root-only work area (a re-run resumes it), checked against
+# its pinned sha256 and its member list, then unpacked by the node user's own process into the node's folder: root
+# opens the file in its work area and hands it to that process on its standard input, so root writes nothing there.
+# A marker in the node's folder says that an unpack is under way; a re-run removes what a cut-short unpack left.
+copy_unpack(){
+  local f=$DL/$COPY_FILE got=0 need_dl frc n=0
+  work_dir
+  if ! is_dry && systemctl is-active --quiet knots-node.service 2>/dev/null; then
+    die AP-417 "the node is running, and it has no chain data that the installer may keep: stop it first (systemctl stop knots-node), then run the same command again."
+  fi
+  plain_own "$f" && got=$(on_disk "$f")
+  need_dl=$(( COPY_BYTES - got )); [ "$need_dl" -ge 0 ] || need_dl=0
+  space_for "$need_dl" $(( COPY_BYTES + 2 * 1000**3 )) || die AP-206 "only $(gb "$SP_AVAIL") GB free$SP_WHERE; the chain copy needs $(gb "$SP_NEED") GB more (download + unpack)"
+  say_t "  AlphaPool's chain copy of block $(sep "$COPY_HEIGHT"): downloading $(gb "$COPY_BYTES") GB from ${COPY_SRC#https://}"
+  rstate downloading "$got" "$COPY_BYTES"
+  fetch_big "$COPY_SRC" "$f" "$COPY_BYTES" "chain copy"; frc=$?
+  [ $frc -eq 3 ] && die AP-307 "the download server had no free download slot for $(( SLOT_WAITED / 3600 )) hours. Run the same command again later: the download resumes where it stopped."
+  [ $frc -eq 0 ] || die AP-306 "the chain copy download did not finish (network trouble). Run the same command again: the download resumes where it stopped."
+  say_t "  downloaded; checking the chain copy's sha256 (1-3 minutes)"
+  rstate verifying "$COPY_BYTES" "$COPY_BYTES"; status_set "step 5/$TOTAL_STEPS: checking the chain copy"
+  if [ "$(sha_of "$f")" != "$COPY_SHA256" ]; then
+    rm -f "$f" "$f.aria2"; rstate failed 0 "$COPY_BYTES"
+    die AP-401 "the downloaded chain copy does not match its pinned sha256 (a corrupted download, or not the file this installer pins): it was deleted. Run the same command again to download it again."
+  fi
+  # Only blocks/ and chainstate/ may come out of the archive: no wallets, no settings, no traversal, no links.
+  if ! tar_only_chain "$f" || ! tar_safe "$f"; then
+    rm -f "$f"; rstate failed 0 "$COPY_BYTES"
+    die AP-402 "the chain copy has members outside blocks/ and chainstate/ (or links): refused"
+  fi
+  say_t "  sha256 matches the pin; unpacking the chain copy"
+  rstate extracting "$COPY_BYTES" "$COPY_BYTES"
+  as_u mkdir -p "$CDIR" && as_u touch "$COPY_MARK" || die AP-505 "the node user $U cannot write its data folder $CDIR"
+  # shellcheck disable=SC2016   # $1 is expanded by the node user's shell
+  as_u bash -c 'umask 077 && exec tar -xf - -C "$1" --no-same-owner --no-same-permissions' _ "$CDIR" < "$f" & BG_PID=$!
+  while kill -0 "$BG_PID" 2>/dev/null; do
+    sleep 2; n=$(( n + 1 )); [ $(( n % 10 )) -eq 0 ] || continue
+    got=$(as_u du -sb "$CDIR/blocks" "$CDIR/chainstate" 2>/dev/null | awk '{s+=$1} END{print s+0}')
+    say "  unpacking: $(( got * 100 / COPY_BYTES ))%"; status_set "step 5/$TOTAL_STEPS: unpacking the chain copy: $(( got * 100 / COPY_BYTES ))%"
+  done
+  if ! wait "$BG_PID"; then
+    BG_PID=""
+    as_u rm -rf "$CDIR/blocks" "$CDIR/chainstate"; as_u rm -f "$COPY_MARK"; rstate failed 0 "$COPY_BYTES"
+    die AP-418 "unpacking the chain copy failed (disk full?); the partial chain data was removed and the checked download is kept. Run the same command again."
+  fi
+  BG_PID=""
+  sync                                       # the unpacked folders are on the disk before the marker goes
+  as_u rm -f "$COPY_MARK"
+  rm -f "$f" "$f.aria2"
+  kv_set "$STATE" chain_start presynced; kv_set "$STATE" chain_start_height "$COPY_HEIGHT"
+  kv_set "$STATE" chain_start_base "$COPY_BLOCK"; kv_set "$STATE" chain_start_at "$(date -u +%FT%TZ)"
+  rstate "done" "$COPY_BYTES" "$COPY_BYTES"
+  say_t "  the chain copy is in place: the node starts at block $(sep "$COPY_HEIGHT") and validates every newer block itself"
 }
 
 # ==== step 6: configuration ============================================================================================
@@ -3497,11 +3623,17 @@ shown=0
 while :; do
   info=$(cli getblockchaininfo 2>/dev/null)
   now=$(date +%s)
+  # At the tip, and it has had peers for two rounds in a row: a node that starts with a tip less than a day old (after
+  # a reboot, or from a fresh chain copy) says it is at the tip until a peer has told it of newer blocks.
   if [ -n "$info" ] && printf '%s' "$info" | jq -e '.initialblockdownload == false and .blocks == .headers and .headers > 0' >/dev/null 2>&1; then
-    printf 'synced %s\n' "$(date -u +%FT%TZ)" > "$R/gateway-gate" 2>/dev/null
-    rm -f "$R/sync-progress"
-    break
-  fi
+    p=$(cli getconnectioncount 2>/dev/null)
+    if [[ ${p:-} =~ ^[1-9][0-9]*$ ]]; then peered=$(( ${peered:-0} + 1 )); else peered=0; fi
+    if [ "$peered" -ge 2 ]; then
+      printf 'synced %s\n' "$(date -u +%FT%TZ)" > "$R/gateway-gate" 2>/dev/null
+      rm -f "$R/sync-progress"
+      break
+    fi
+  else peered=0; fi
   printf 'waiting for the node to catch up %s\n' "$(date -u +%FT%TZ)" > "$R/gateway-gate"
   b=$(printf '%s' "$info" | jq -r '.blocks // empty' 2>/dev/null); h=$(printf '%s' "$info" | jq -r '.headers // empty' 2>/dev/null)
   if [[ ${b:-} =~ ^[0-9]+$ ]] && [[ ${h:-} =~ ^[0-9]+$ ]] && [ "$h" -gt "$b" ]; then
@@ -3638,7 +3770,7 @@ step_start(){
   fi
   if [ -z "$(kv_get "$STATE" chain_start || true)" ]; then      # how this node got its chain (alphapool-node status says it)
     if has_u -e "$CDIR/chainstate_snapshot"; then kv_set "$STATE" chain_start assumeutxo      # chain data kept from a validated start
-    elif [ "$SAVED_SYNC" = snapshot ]; then kv_set "$STATE" chain_start presynced
+    elif [ "$SAVED_SYNC" = snapshot ] || [ "$SAVED_SYNC" = copy ]; then kv_set "$STATE" chain_start presynced
     else kv_set "$STATE" chain_start network; fi
   fi
   install_complete
@@ -3675,12 +3807,19 @@ step_catch_up(){
     is_dry && return 0
     wait_for_job; return 0
   fi
-  local info b h peers last=0 now t0 judge=120 nap=15
+  local info b h peers last=0 now t0 judge=120 nap=15 copy=0 peered=0
   is_dry && { judge=${AP_DRY_JUDGE_S:-120}; nap=1; }
+  # A node that starts from a chain copy less than a day old does not count itself as syncing: until a peer has told it
+  # of newer blocks it says it is at the tip. So after the chain copy it is at the tip only once it has had peers for
+  # two rounds in a row (their headers arrive within seconds of the connection).
+  [ "$(kv_get "$STATE" chain_start || true)" = presynced ] && copy=1
   t0=$(date +%s)
   while :; do
     info=$(cli getblockchaininfo 2>/dev/null)
-    if [ -n "$info" ] && synced "$info"; then say_t "  the node is at the tip: block $(printf '%s' "$info" | jq -r .blocks) ($(( ($(date +%s) - t0) / 60 )) min)"; break; fi
+    if [ "$copy" = 1 ]; then peers=$(cli getconnectioncount 2>/dev/null); if [[ $peers =~ ^[1-9][0-9]*$ ]]; then peered=$(( peered + 1 )); else peered=0; fi; fi
+    if [ -n "$info" ] && synced "$info" && { [ "$copy" = 0 ] || [ "$peered" -ge 2 ]; }; then
+      say_t "  the node is at the tip: block $(printf '%s' "$info" | jq -r .blocks) ($(( ($(date +%s) - t0) / 60 )) min)"; break
+    fi
     now=$(date +%s)
     if [ $(( now - last )) -ge 60 ]; then
       b=$(printf '%s' "$info" | jq -r '.blocks // 0' 2>/dev/null); h=$(printf '%s' "$info" | jq -r '.headers // 0' 2>/dev/null)
@@ -4427,6 +4566,7 @@ print_cloud_init(){
   # how the node gets its chain and which software it runs: exactly as asked for here (validate_choices checked them)
   [ -n "$A_START" ] && args="$args --start $A_START"
   [ -n "$A_SYNC" ] && args="$args --sync $A_SYNC"
+  [ -n "$A_SNAP_MIRROR" ] && args="$args --snapshot-url $(sq "$A_SNAP_MIRROR")"
   [ -n "$A_UTXO_URL" ] && args="$args --utxo-url $(sq "$A_UTXO_URL") --utxo-sha256 $A_UTXO_SHA --utxo-bytes $A_UTXO_BYTES"
   [ -n "$A_UTXO_HEIGHT" ] && args="$args --utxo-height $A_UTXO_HEIGHT"
   [ "$A_NO_TORRENT" = 1 ] && args="$args --no-torrent"
@@ -4515,6 +4655,7 @@ main(){
       printf 'start_mode=%s\nstart_label=%s\nstart_signed=%s\nstart_about=%s\nstart_default=%s\nstart_modes=%s\nstart_gone=%s\n' \
         "$([ -n "$MODE_GONE" ] || echo "$M_NAME")" "$M_LABEL" "$M_VERIFY" "$M_ABOUT" "$START_DEFAULT" "$(mode_names)" "$MODE_GONE"
       printf 'start_trust=%s\nstart_trust_zh=%s\n' "$M_TRUST" "$M_TRUST_ZH"
+      printf 'sync_default=%s\ncopy_height=%s\ncopy_bytes=%s\ncopy_sha256=%s\ncopy_url=%s\ncopy_about=%s\n' "$SYNC_DEFAULT" "$COPY_HEIGHT" "$COPY_BYTES" "$COPY_SHA256" "$COPY_URL" "$COPY_ABOUT"
       printf 'knots_required_ver=%s\nknots_required_by_height=%s\ninstaller_url=%s\n' "$KNOTS_REQUIRED_VER" "$KNOTS_REQUIRED_BY_HEIGHT" "$INSTALLER_URL"
       utxo_pick mode && printf 'utxo_height=%s\nutxo_sha256=%s\nutxo_url=%s\n' "$UX_HEIGHT" "$UX_SHA" "$UX_URL"
       exit 0;;

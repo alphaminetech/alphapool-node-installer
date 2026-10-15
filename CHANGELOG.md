@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## 2026-10-15.2
+
+- A new node gets its chain from **AlphaPool's chain copy** by default (`--sync copy`): the `blocks/` and
+  `chainstate/` folders of a pruned AlphaPool node at block 977,343, packed while that node was stopped (14.0 GB,
+  sha256 8ba30b034b5d1746...). The file's sha256 and member list are checked before anything is unpacked; the node's
+  own user unpacks it; a cut-short unpack is removed and redone on the next run. The node then validates every newer
+  block by itself, with no history check in the background: ready in under an hour. It runs the default mode's build
+  (AlphaPool's v2.1 build of 29.4.2).
+- The validated start stays: `--start fast` (976000, AlphaPool's v2.1 build), `--start official` (910000, the signed
+  release), or `--sync assumeutxo`. Naming a start mode or a UTXO snapshot chooses its validated start unless `--sync`
+  says otherwise. `--sync network` is unchanged.
+- The plan, `--help` and the guides give the choice in one sentence: the chain copy is ready in under an hour and has
+  no background history check, but you trust AlphaPool that the copy is correct; the validated start trusts only the
+  snapshot hash compiled into Bitcoin Knots, but its background history check takes a day or more and can make a small
+  server fall behind new blocks.
+- `--snapshot-url URL` takes the same chain copy from a mirror (same sha256 check); it is saved for re-runs and passed
+  on in cloud-init user data. The old name `--sync snapshot` stops with AP-105 and says the new one.
+- The gateway starter, and the installer after a chain copy, count the node as at the tip only once it has had peers
+  for two rounds in a row: a node whose tip is less than a day old (a fresh chain copy, or a reboot) reports itself at
+  the tip until a peer has told it of newer blocks.
+- `alphapool-node status` says "AlphaPool's chain copy of block N" for such a node. New error codes AP-417 (the node
+  runs over an empty chain folder: stop it first) and AP-418 (the unpack failed: partial folders removed, download kept).
+- Nodes that are installed keep their chain and their mode; `alphapool-node upgrade` brings the new helper files.
+
 ## 2026-10-15.1
 
 - The default fast start installs AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1 performance patch (official
