@@ -10,8 +10,9 @@
 #   * the validated start for the chain: the node loads a UTXO snapshot that Bitcoin Knots itself checks against a
 #     hash compiled into it, then validates every block since then by itself (README "How the node gets its chain")
 #   * a firewall that keeps your SSH port open, lets rigs and Bitcoin peers in and keeps everything else closed
-# Every download is pinned below (https URL + sha256) and checked BEFORE it is used. Bitcoin Knots is also checked
-# against its release builders' signatures (both modes: the fast build's SHA256SUMS.asc is published next to its archive).
+# Every download is pinned below (https URL + sha256) and checked BEFORE it is used. A Bitcoin Knots build that carries
+# release-builder signatures (the official mode) is also checked against them; the default fast build (AlphaPool's
+# v2.1 build of 29.4.2) is pinned by its sha256 until independent builders have signed it.
 #
 # AlphaPool gets NO access to this server: no SSH keys, no allowlists, no remote commands, no update channel.
 # Your SSH setup is not touched. The optional status heartbeat (only with --node-id and --token) reports sync and
@@ -27,7 +28,7 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-10.2"
+AP_VERSION="2026-10-15.1"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
@@ -67,7 +68,7 @@ KNOTS_REQUIRED_VER=""
 KNOTS_REQUIRED_BY_HEIGHT=0
 start_modes(){ cat <<'MODES'
 official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
-fast|29.4.2.knots20260508|https://github.com/chrisguida/bitcoin/releases/download/v29.4.2.knots20260508-assumeutxo976000/bitcoin-6ce57028d6cf-x86_64-linux-gnu.tar.gz|5c26890d72daa499fe22b905de5cfb0a78e2445aedbde0726278f57672106a9d|builders|840000 880000 910000 976000|976000|about 35 minutes|Bitcoin Knots 29.4.2 plus the 976000 snapshot entry (PR #444), signed by a release builder|You trust the Bitcoin Knots release builders who have signed this build: it is the official 29.4.2 source plus the one chainparams commit of PR #444, reproduced with Guix and attested on https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 (one builder so far, more requested); the installer checks those signatures against the pinned builder keys, and when a signed release includes this snapshot the upgrade command moves your node to that release.|您信任为这个构建版签名的 Bitcoin Knots 发布构建者：它是官方 29.4.2 源码加上 PR #444 的一个 chainparams 提交，用 Guix 复现并在 https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 上签署（目前一位构建者，正在征集更多）；安装程序用固定的构建者密钥检查这些签名；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
+fast|29.4.2.knots20260508|https://xbt.alphapool.tech/dl/knots/v2.1/guix/bitcoin-d59c28864a40-x86_64-linux-gnu.tar.gz|6bbcf8ad8307b0428adcc70a9ae0a0874c3492a605274494df4829d9f1ca7527|pin|840000 880000 910000 976000|976000|about 35 minutes|Bitcoin Knots 29.4.2 + AlphaPool performance patch v2.1, with the 976000 snapshot entry (PR #444)|You trust AlphaPool for this build: it is the official 29.4.2 source plus the one chainparams commit of PR #444 and five AlphaPool commits that keep new blocks and mining jobs first while your node checks its history in the background (release notes: https://xbt.alphapool.tech/dl/knots/v2.1/README.txt). AlphaPool built it reproducibly with Guix; independent builders are reproducing and signing it (https://github.com/alphaminetech/knots/pull/1). Until they have, the installer checks the archive against the sha256 pinned here.|您为这个构建版信任 AlphaPool：它是官方 29.4.2 源码，加上 PR #444 的一个 chainparams 提交，以及 AlphaPool 的五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务（发布说明：https://xbt.alphapool.tech/dl/knots/v2.1/README.txt）。AlphaPool 用 Guix 可复现地构建了它；独立构建者正在复现并签名（https://github.com/alphaminetech/knots/pull/1）。在此之前，安装程序用这里固定的 sha256 检查该文件。
 MODES
 }
 # utxo_table: the snapshot files, one line each:

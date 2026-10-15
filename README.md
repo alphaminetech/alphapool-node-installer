@@ -20,17 +20,13 @@ connects to AlphaPool. AlphaPool gets **no access** to your server.
 Provider rules: both providers forbid mining ON the server (CPU/GPU hashing). This server does no hashing: it runs a
 Bitcoin node and the gateway your rigs connect to. Contabo writes "we fully support the hosting of Crypto-Nodes" [C6].
 
-### Default fast start (2026-10-10.1)
+### Default fast start (2026-10-15.1)
 
-New nodes use Chris Guida's Bitcoin Knots 29.4.2 + PR444 build and snapshot **976000**: the build is verified by the release-builder signatures on its `SHA256SUMS` (published next to the archive) plus the archive sha256 pinned here, and the snapshot by its pinned sha256 and then by Bitcoin Knots itself. The total start is **about 35 minutes**, depending on download speed and the blocks left to validate; status reports measured progress and time left.
+New nodes use AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1 performance patch and snapshot **976000**: the build is checked against the archive sha256 pinned here, and the snapshot by its pinned sha256 and then by Bitcoin Knots itself. The total start is **about 35 minutes**, depending on download speed and the blocks left to validate; status reports measured progress and time left.
 
-The build is the official 29.4.2 source plus the one chainparams commit of PR #444, reproduced with Guix and attested on https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 (one of the seven 29.4.2 release builders so far; more attestations are being solicited). When a signed Bitcoin Knots release includes this snapshot, the upgrade command moves your node to that release.
+The build is the official 29.4.2 source plus the one chainparams commit of PR #444 and five AlphaPool commits that keep new blocks and mining jobs first while the node checks its history in the background (https://xbt.alphapool.tech/dl/knots/v2.1/README.txt). AlphaPool built it reproducibly with Guix; independent builders are reproducing and signing it (https://github.com/alphaminetech/knots/pull/1). Once their signatures are published next to the archive, the installer checks them like a release's. The official mode is unchanged.
 
-该构建版是官方 29.4.2 源码加上 PR #444 的一个 chainparams 提交，用 Guix 复现并在 https://github.com/chrisguida/guix.sigs/tree/assumeutxo976000 上签署（目前为 29.4.2 的七位发布构建者之一，正在征集更多签名）；当签名发布版包含同一快照后，升级命令会将您的节点升级到该版本。
-
-Use `--start official` for the builder-signed release and its 910000 snapshot (one to two days). Existing .6 nodes keep their mode and chain state on upgrade and continue catching up; changing the default does not load a new snapshot over existing data. Snapshot downloads try the pinned BitTorrent swarm first and fall back to a fresh https download under the speed rule below.
-
-
+该构建版是官方 29.4.2 源码，加上 PR #444 的一个 chainparams 提交，以及 AlphaPool 的五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务（https://xbt.alphapool.tech/dl/knots/v2.1/README.txt）。AlphaPool 用 Guix 可复现地构建了它；独立构建者正在复现并签名（https://github.com/alphaminetech/knots/pull/1）。
 ## Install, form 1: one paste (SSH or the provider's web console)
 
 Log in as root, or as a user with sudo, then paste the command from your AlphaPool dashboard ("My node"). If you are
@@ -186,8 +182,9 @@ them as one thing, a *start mode*: the build (version, archive, sha256, and who 
 that build knows, the snapshot a new node starts from, and how long the node then validates. The modes are a short
 table in the installer; `--help` lists them, each with one sentence that says what you are trusting.
 
-- This version has two builder-signed modes. The default `fast` mode is Bitcoin Knots 29.4.2 plus the PR #444 snapshot
-  entry and starts from block 976,000. The `official` mode is the unmodified 29.4.2.knots20260508 release and starts
+- This version has two modes. The default `fast` mode is AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1
+  performance patch and the PR #444 snapshot entry (pinned by sha256; builder signatures pending) and starts from
+  block 976,000. The `official` mode is the unmodified 29.4.2.knots20260508 release and starts
   from block 910,000, which is why that route is estimated at one to two days.
 - `--start NAME` chooses a mode. Without it a new install takes the installer's default mode.
 - When a Bitcoin Knots build carries a newer block, AlphaPool adds a mode (or changes one); the start is then much

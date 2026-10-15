@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## 2026-10-15.1
+
+- The default fast start installs AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1 performance patch (official
+  29.4.2 + PR #444 + five AlphaPool commits that keep new blocks and mining jobs first while the node checks its history),
+  built reproducibly with Guix and pinned by its sha256 (6bbcf8ad8307b042...). Independent builder signatures are pending
+  (https://github.com/alphaminetech/knots/pull/1); the official mode is unchanged. Nodes on 2026-10-10.x's fast build move to it with `alphapool-node upgrade`.
+
 ## 2026-10-10.2
 
 - The BitTorrent attempt switches to the https download sooner: after a 90-second grace, below 8 MB/s averaged
