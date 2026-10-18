@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 2026-10-17.1
+
+- Stop `alphapool-gateway-start` before `datum-gateway` and `knots-node` in the chain-copy switch recipe, so the
+  starter cannot restart them while chain folders are removed. The AP-417 recovery command uses the same stop set.
+
+- Supply three separately pinned start-option rows in English and Chinese for the My node tab; keep the single-note
+  wording available as layout A. Installer flow and defaults are unchanged.
+- Call the chain copy AlphaPool's recommended start, and `--start fast` the validated-start alternative using the
+  AlphaPool v2.1 build with the background-validation fix. Defaults, downloads and chain handling stay the same.
+- Mark `--start official` not recommended: its background history check can stall peer replies for minutes, leave
+  the node behind new blocks and orphan mined blocks. New installs show the warning and explicitly confirm this
+  choice in the existing install prompt; `--yes` accepts it.
+- During an official-mode history check, status offers the dashboard's chain-copy switch recipe and the tested
+  `sudo alphapool-node upgrade --start fast` alternative that keeps the chain. Remove the blanket claim that a
+  background history check never affects mining. English and Chinese install guidance match.
+
 ## 2026-10-15.2
 
 - A new node gets its chain from **AlphaPool's chain copy** by default (`--sync copy`): the `blocks/` and

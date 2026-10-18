@@ -30,7 +30,7 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-15.2"
+AP_VERSION="2026-10-17.1"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
@@ -108,8 +108,23 @@ COPY_ABOUT="under an hour"
 COPY_TRUST="You trust AlphaPool for this chain copy: it is the blocks and chainstate folders of a pruned AlphaPool node that was at the chain tip, packed while that node was stopped. The installer checks the file against the sha256 pinned here; your node validates every block after the copy by itself, but not the history before it."
 COPY_TRUST_ZH="您为这份链数据副本信任 AlphaPool：它是一个已同步到链顶端的 AlphaPool 修剪节点的 blocks 和 chainstate 文件夹，在该节点停止时打包。安装程序用这里固定的 sha256 检查该文件；您的节点会自行验证副本之后的每个区块，但不验证副本之前的历史。"
 # The choice in one sentence (the plan, --help and the guides say it the same way)
-SYNC_TRADEOFF="The chain copy is ready in $COPY_ABOUT and has no background history check, so your node keeps up with new blocks from the start, but you trust AlphaPool that the copy is correct; the validated start (--start fast or --start official) trusts only the snapshot hash compiled into Bitcoin Knots, but its background history check takes a day or more and can make a small server fall behind new blocks."
-SYNC_TRADEOFF_ZH="链数据副本不到一小时即可就绪，且没有后台历史检查，您的节点从一开始就能跟上新区块，但您需要信任 AlphaPool 提供的副本是正确的；验证启动（--start fast 或 --start official）只信任编译进 Bitcoin Knots 的快照哈希，但其后台历史检查需要一天或更久，并可能让小型服务器落后于新区块。"
+SYNC_TRADEOFF="The chain copy is AlphaPool's recommended start: no background history check, but you trust AlphaPool for the copy; --start fast is the validated-start alternative, trusting only the snapshot hash compiled into Bitcoin Knots and running AlphaPool's v2.1 build with the background-validation fix; --start official is not recommended because its history check takes a day or more, can stop peer replies for minutes, make the node fall behind new blocks and leave mined blocks orphaned."
+SYNC_TRADEOFF_ZH="链数据副本是 AlphaPool 推荐的启动方式：没有后台历史检查，但您需信任 AlphaPool 提供的副本；--start fast 是验证启动的备选方式，只信任编译进 Bitcoin Knots 的快照哈希，运行含后台验证修复的 AlphaPool v2.1 构建版；不推荐 --start official，因为其历史检查需要一天或更久，可能导致节点数分钟不响应对等节点、落后于新区块，并使挖出的区块成为孤块。"
+# Three separately pinned rows for the My node tab's layout B; SYNC_TRADEOFF above keeps layout A available.
+# shellcheck disable=SC2034
+SYNC_RECOMMENDED="Recommended: AlphaPool chain copy (the default) — ready in $COPY_ABOUT, no background history check; you trust AlphaPool for the copy."
+# shellcheck disable=SC2034
+SYNC_RECOMMENDED_ZH="推荐：AlphaPool 链数据副本（默认）——不到一小时即可就绪，没有后台历史检查；您需信任 AlphaPool 提供的副本。"
+# shellcheck disable=SC2034
+SYNC_ALTERNATIVE="Alternative: --start fast — validated start; trusts only the snapshot hash compiled into Bitcoin Knots; runs AlphaPool's v2.1 build with the background-validation fix."
+# shellcheck disable=SC2034
+SYNC_ALTERNATIVE_ZH="备选：--start fast ——验证启动；只信任编译进 Bitcoin Knots 的快照哈希；运行含后台验证修复的 AlphaPool v2.1 构建版。"
+# shellcheck disable=SC2034
+SYNC_NOT_RECOMMENDED="Not recommended: --start official — stock Bitcoin Knots; its history check takes a day or more and makes the node fall behind new blocks, so blocks it finds are often orphaned."
+# shellcheck disable=SC2034
+SYNC_NOT_RECOMMENDED_ZH="不推荐：--start official ——原版 Bitcoin Knots；其历史检查需要一天或更久，并使节点落后于新区块，因此挖出的区块经常成为孤块。"
+OFFICIAL_WARNING="--start official is not recommended: its background history check takes a day or more and can stop peer replies for minutes, make the node fall behind new blocks and leave mined blocks orphaned."
+OFFICIAL_WARNING_ZH="不推荐 --start official：其后台历史检查需要一天或更久，可能导致节点数分钟不响应对等节点、落后于新区块，并使挖出的区块成为孤块。"
 # The Bitcoin Knots pin of this run is the build of the node's start mode: mode_apply sets these four (and M_*).
 KNOTS_VER=""; KNOTS_URL=""; KNOTS_SHA256=""; KNOTS_VERIFY=""
 M_NAME=""; M_VER=""; M_URL=""; M_SHA=""; M_VERIFY=""; M_KNOWS=""; M_HEIGHT=""; M_ABOUT=""; M_LABEL=""; M_TRUST=""; M_TRUST_ZH=""
@@ -1309,7 +1324,7 @@ show_plan(){
         say "                   ready in $COPY_ABOUT. KEEP YOUR RIGS MINING WHERE THEY ARE until this says READY."
         printf '%s\n' "$COPY_TRUST" | fold -s -w 96 | sed 's/ *$//; s/^/                   /'
         [ -z "$COPY_TRUST_ZH" ] || say_zh "                   $COPY_TRUST_ZH"
-        say "                   Other ways: --start fast or --start official (the validated start), --sync network."
+        say "                   Other ways: --start fast (validated-start alternative), --start official (not recommended), --sync network."
         printf '%s\n' "$SYNC_TRADEOFF" | fold -s -w 96 | sed 's/ *$//; s/^/                   /'
         [ -z "$SYNC_TRADEOFF_ZH" ] || say_zh "                   $SYNC_TRADEOFF_ZH"
       fi;;
@@ -1321,11 +1336,17 @@ show_plan(){
   say "  AlphaPool access to this server: none (no keys, no remote commands, no update channel)"
 }
 confirm(){
+  local prompt="Type yes to install, anything else to stop: "
+  if [ "$START_MODE" = official ] && [ ! -e "$CONF" ]; then
+    warn "$OFFICIAL_WARNING"
+    say_zh "$OFFICIAL_WARNING_ZH"
+    prompt="Type yes to install official mode despite this warning, anything else to stop: "
+  fi
   [ "$YES" = 1 ] && return 0
   if ! [ -r /dev/tty ] || ! { : < /dev/tty; } 2>/dev/null; then die AP-100 "no terminal to ask in: add --yes to run without questions"; fi
   local ans="" logged=0
   if [ -n "$TEE_PID" ]; then logged=1; flush_tee || die AP-100 "could not finish writing the plan to the terminal"; fi
-  { IFS= read -r -p "Type yes to install, anything else to stop: " ans < /dev/tty; } 2>/dev/tty || true
+  { IFS= read -r -p "$prompt" ans < /dev/tty; } 2>/dev/tty || true
   [ "$logged" = 0 ] || start_tee
   [ "$ans" = yes ] || { say "Stopped. Nothing was changed."; drain; exit 1; }
 }
@@ -1914,7 +1935,12 @@ status(){
     [[ ${sh:-} =~ ^[1-9][0-9]*$ ]] || { ask getblockheader "$(jq -r '.chainstates[1].snapshot_blockhash' <<<"$cs")"; sh=$(jq -r '.height // empty' <<<"$A" 2>/dev/null); }
     echo "  chain    : validated start from the UTXO snapshot of block $(sep "${sh:-?}"); this node validates every block since itself"
     if [[ ${sh:-} =~ ^[1-9][0-9]*$ ]] && [[ ${bgb:-} =~ ^[0-9]+$ ]]; then
-      echo "             history check: block $(sep "$bgb") of $(sep "$sh") ($(( bgb * 100 / sh ))%). It runs in the background and does not affect mining"
+      echo "             history check: block $(sep "$bgb") of $(sep "$sh") ($(( bgb * 100 / sh ))%). It runs in the background"
+    fi
+    if [ "$(val START_MODE $ETC/node.conf)" = official ] || [ -z "$(val START_MODE $ETC/node.conf)" ]; then
+      local switch_sha
+      switch_sha=$(sha256sum "$INSTALLER" | cut -d' ' -f1)
+      echo "  advisory : official history checks can stall peer replies and orphan mined blocks; switch to AlphaPool's recommended chain copy: curl -fsSL https://xbt.alphapool.tech/node/install.sh -o ap-node.sh && echo \"$switch_sha  ap-node.sh\" | sha256sum -c - && sudo systemctl stop alphapool-gateway-start datum-gateway knots-node && sudo -u alphapool rm -rf /home/alphapool/.bitcoin/blocks /home/alphapool/.bitcoin/chainstate /home/alphapool/.bitcoin/chainstate_snapshot && sudo bash ap-node.sh --sync copy --yes; or keep your chain and use the validated-start alternative: sudo alphapool-node upgrade --start fast"
     fi
   elif [ "${ncs:-0}" = 1 ] && [ -n "$(jq -r '.chainstates[0].snapshot_blockhash // empty' <<<"$cs" 2>/dev/null)" ]; then
     echo "  chain    : validated start; the history check is complete: this node has validated the whole chain itself"
@@ -3300,7 +3326,7 @@ catchup_handover(){   # the long catch-up goes on without the installer: what is
   say "  - The gateway starts by itself when the node is at the chain tip. No command is needed, and you can log out."
   say "  - See how far it is at any time:  alphapool-node status   (blocks left and the time left; it says READY at the end)"
   say "    The same line is on this server's login screen in your provider's web console."
-  say "  - The history before the snapshot is checked afterwards, in the background. It does not affect mining."
+  say "  - The history before the snapshot is checked afterwards, in the background."
   say_zh "安装已完成, 但节点还未就绪: 正在验证 $(sep "$CATCHUP_LEFT") 个区块. 在显示 READY 之前请让矿机继续在原处挖矿."
   say_zh "查看进度: alphapool-node status (显示剩余区块和时间, 完成后显示 READY). 网关会在节点同步完成后自动启动."
   status_set "validating blocks: $(sep "$CATCHUP_LEFT") left${CATCHUP_ETA:+, $CATCHUP_ETA}"
@@ -3336,7 +3362,7 @@ copy_unpack(){
   local f=$DL/$COPY_FILE got=0 need_dl frc n=0
   work_dir
   if ! is_dry && systemctl is-active --quiet knots-node.service 2>/dev/null; then
-    die AP-417 "the node is running, and it has no chain data that the installer may keep: stop it first (systemctl stop knots-node), then run the same command again."
+    die AP-417 "the node is running, and it has no chain data that the installer may keep: stop the gateway starter, gateway and node first (systemctl stop alphapool-gateway-start datum-gateway knots-node), then run the same command again."
   fi
   plain_own "$f" && got=$(on_disk "$f")
   need_dl=$(( COPY_BYTES - got )); [ "$need_dl" -ge 0 ] || need_dl=0

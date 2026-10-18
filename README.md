@@ -4,7 +4,7 @@ One command turns a fresh server **you own** into an AlphaPool mining node: a pr
 **DATUM gateway** that builds block templates from your own node. Your rigs connect to your server; your server
 connects to AlphaPool. AlphaPool gets **no access** to your server.
 
-- Script: `install.sh` (version `2026-10-15.2`; changes: `CHANGELOG.md`). Everything below refers to that file.
+- Script: `install.sh` (version `2026-10-17.1`; changes: `CHANGELOG.md`). Everything below refers to that file.
 - Supported: **Ubuntu 24.04 LTS or Ubuntu 22.04 LTS, x64.** Any other system stops at once with error AP-202, before
   anything is changed.
 - Server: **4 GB RAM or more, 80 GB disk or more**, 2 vCPU recommended.
@@ -14,20 +14,22 @@ connects to AlphaPool. AlphaPool gets **no access** to your server.
     location. [C5]
 - **By default the node starts from AlphaPool's chain copy**: the `blocks` and `chainstate` folders of a pruned
   AlphaPool node at the chain tip, checked against the sha256 pinned in the installer. It is ready in **under an hour**
-  and runs no history check in the background. Or choose the validated start (`--start fast` or `--start official`),
-  which trusts the snapshot hash compiled into Bitcoin Knots instead. Keep your rigs mining where they are until the
+  and runs no history check in the background. The validated-start alternative (`--start fast`)
+  trusts only the snapshot hash compiled into Bitcoin Knots and runs AlphaPool's v2.1 build with the background-validation fix.
+  `--start official` is not recommended: its history check can stall peer replies for minutes, fall behind new blocks
+  and leave mined blocks orphaned. Keep your rigs mining where they are until the
   installer, or `alphapool-node status`, says **READY**. See "How the node gets its chain".
 
 Provider rules: both providers forbid mining ON the server (CPU/GPU hashing). This server does no hashing: it runs a
 Bitcoin node and the gateway your rigs connect to. Contabo writes "we fully support the hosting of Crypto-Nodes" [C6].
 
-### Default: AlphaPool's chain copy (2026-10-15.2)
+### AlphaPool's recommended start: the chain copy (2026-10-17.1)
 
 New nodes get their chain from **AlphaPool's chain copy** of block 977,343 (14.0 GB, sha256 pinned in the installer) and run AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1 performance patch. The node validates every block after the copy by itself and is ready in **under an hour**; there is no history check in the background, so it keeps up with new blocks from the start.
 
 **The choice in one sentence:** the chain copy is ready in under an hour and has no background history check, so your node keeps up with new blocks from the start, but you trust AlphaPool that the copy is correct; the validated start (`--start fast` or `--start official`) trusts only the snapshot hash compiled into Bitcoin Knots, but its background history check takes a day or more and can make a small server fall behind new blocks.
 
-The build is the official 29.4.2 source plus the one chainparams commit of PR #444 and five AlphaPool commits that keep new blocks and mining jobs first while a node checks its history in the background (https://xbt.alphapool.tech/dl/knots/v2.1/README.txt). AlphaPool built it reproducibly with Guix; independent builders are reproducing and signing it (https://github.com/alphaminetech/knots/pull/1). Once their signatures are published next to the archive, the installer checks them like a release's. The official mode is unchanged.
+The build is the official 29.4.2 source plus the one chainparams commit of PR #444 and five AlphaPool commits that keep new blocks and mining jobs first while a node checks its history in the background (https://xbt.alphapool.tech/dl/knots/v2.1/README.txt). AlphaPool built it reproducibly with Guix; independent builders are reproducing and signing it (https://github.com/alphaminetech/knots/pull/1). Once their signatures are published next to the archive, the installer checks them like a release's. The official mode remains available with a warning and an explicit confirmation on new installs (`--yes` accepts it).
 
 该构建版是官方 29.4.2 源码，加上 PR #444 的一个 chainparams 提交，以及 AlphaPool 的五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务（https://xbt.alphapool.tech/dl/knots/v2.1/README.txt）。AlphaPool 用 Guix 可复现地构建了它；独立构建者正在复现并签名（https://github.com/alphaminetech/knots/pull/1）。
 ## Install, form 1: one paste (SSH or the provider's web console)
@@ -45,7 +47,7 @@ What the command does:
 2. It checks the installer's sha256 against the value printed in the command. If they differ, nothing runs.
 3. It runs the installer.
 
-The installer asks once for confirmation (`--yes` skips the question). With `--token -` it also asks for the heartbeat
+The installer asks once for confirmation (`--yes` skips the question, including the official-mode warning confirmation). With `--token -` it also asks for the heartbeat
 token, without showing it on screen.
 
 You can leave out `--node-id` and `--token`. The node mines exactly the same without them; only the optional status
@@ -167,7 +169,7 @@ and when the node is at the chain tip, `alphapool-node status` and the login scr
 
 ## How the node gets its chain
 
-**AlphaPool's chain copy (default, `--sync copy`).**
+**AlphaPool's recommended start: the chain copy (default, `--sync copy`).**
 
 1. The installer downloads one tar file: the `blocks` and `chainstate` folders of a pruned AlphaPool node (`prune=4000`,
    the setting this installer writes) that was at the chain tip, packed while that node was stopped. It holds nothing
@@ -193,7 +195,7 @@ the same file from a mirror (its sha256 is checked the same way).
 2. From that block on, **your node validates every block itself**, up to the chain tip. Only then does the gateway
    start.
 3. In the background the node also validates the **whole history before the snapshot** and compares the result with
-   the snapshot. This takes days on a small server, does not affect mining, and `alphapool-node status` shows how
+   the snapshot. This takes days on a small server, and `alphapool-node status` shows how
    far it is (`history check: block N of 910,000`).
 
 **Start modes.** A Bitcoin Knots build and the snapshot it starts from belong together, so the installer treats
@@ -210,6 +212,9 @@ table in the installer; `--help` lists them, each with one sentence that says wh
 - When a Bitcoin Knots build carries a newer block, AlphaPool adds a mode (or changes one); the start is then much
   shorter. The mode says whether builder signatures or only its pinned sha256 vouch for the build, and `official`
   stays available.
+- On an installed official-mode node, `sudo alphapool-node upgrade --start fast` changes to AlphaPool's v2.1 build
+  without restarting the chain; that build also knows the official mode's block 910,000 snapshot. `status` offers
+  this alternative and the dashboard's chain-copy switch recipe while the history check is still running.
 - **Nodes that are installed already need nothing**: they have their chain, and they keep their mode. A later
   default does not move them.
 
@@ -579,7 +584,7 @@ and the logs in `/var/lib/alphapool/log` stay.
 | AP-411 … 414 | the validated start: this Bitcoin Knots build does not know the snapshot's block (411); the file is not the expected snapshot, or Bitcoin Knots rejected its content (412: the file is deleted); the node did not load it (413); a Bitcoin Knots build that does not know the block of the snapshot a node still depends on is not put in place, or was put back because the node did not start on it (414) |
 | AP-415 | networking could not be safely paused or confirmed restored after a validated start; any recovery marker and journal are kept. Fix the reported cause, then run `sudo alphapool-node repair`. The marker is `/etc/alphapool/network-paused`; do not delete it to bypass recovery |
 | AP-416 | a snapshot import is still running, or its state could not be checked safely. This command refuses to continue without stopping the node, enabling networking or removing pending recovery state. Check `sudo alphapool-node status`; wait for the import to finish or fix the reported inspection problem, then run the same command again |
-| AP-417 | the chain copy is not unpacked while the node runs over an empty or partial chain folder: stop it (`systemctl stop knots-node`), then run the same command again |
+| AP-417 | the chain copy is not unpacked while the node runs over an empty or partial chain folder: stop the gateway starter, gateway and node (`systemctl stop alphapool-gateway-start datum-gateway knots-node`), then run the same command again |
 | AP-418 | unpacking the chain copy failed (a full disk?): the partial folders are removed, the checked download is kept; run the same command again |
 | AP-501 … 517 | install: apt, user, programs could not be put in place (503), gateway binary does not run (504), a config could not be written (505), node start, background service, firewall (ufw); upgrade put back: the new node did not start (511), the gateway did not come back (512), a service could not be stopped (515), the upgrade was cut off by a signal (516); upgrade done but the gateway is not back yet (513, exit code 3); an upgrade that was cut short was put back (517) |
 
