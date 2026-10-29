@@ -14,7 +14,7 @@
 #   * a firewall that keeps your SSH port open, lets rigs and Bitcoin peers in and keeps everything else closed
 # Every download is pinned below (https URL + sha256) and checked BEFORE it is used. A Bitcoin Knots build that carries
 # release-builder signatures (the official mode) is also checked against them; the default fast build (AlphaPool's
-# v2.1 build of 29.4.2) is pinned by its sha256 until independent builders have signed it.
+# v3 build of 29.4.3) is pinned by its sha256 until independent builders have signed it.
 #
 # AlphaPool gets NO access to this server: no SSH keys, no allowlists, no remote commands, no update channel.
 # Your SSH setup is not touched. The optional status heartbeat (only with --node-id and --token) reports sync and
@@ -30,7 +30,7 @@ umask 022
 export LC_ALL=C
 export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
 
-AP_VERSION="2026-10-17.1"
+AP_VERSION="2026-10-28.1"
 INSTALLER_URL="https://xbt.alphapool.tech/node/install.sh"     # what --print-cloud-init fetches (and verifies)
 
 # ==== Pins: AlphaPool's tested software. They change only with a new installer release (= a new sha256 for it). ====
@@ -68,11 +68,11 @@ START_LEGACY="official"
 # such a release exists; the installer release that pins it fills both values. From then on `alphapool-node status`
 # shows an UPDATE line on a node whose bitcoind is not that release, the installer and the upgrade warn, and the
 # heartbeat reports the installed versions so the dashboard can show who still has to update.
-KNOTS_REQUIRED_VER=""
-KNOTS_REQUIRED_BY_HEIGHT=0
+KNOTS_REQUIRED_VER="29.4.3.knots20260508"
+KNOTS_REQUIRED_BY_HEIGHT=979919
 start_modes(){ cat <<'MODES'
-official|29.4.2.knots20260508|https://bitcoinknots.org/files/29.x/29.4.2.knots20260508/bitcoin-29.4.2.knots20260508-x86_64-linux-gnu.tar.gz|b59d0445a317e21a03dc29425db3aba79b27d5125230b1a2b1dce62e120827c5|builders|840000 880000 910000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
-fast|29.4.2.knots20260508|https://xbt.alphapool.tech/dl/knots/v2.1/guix/bitcoin-d59c28864a40-x86_64-linux-gnu.tar.gz|6bbcf8ad8307b0428adcc70a9ae0a0874c3492a605274494df4829d9f1ca7527|pin|840000 880000 910000 976000|976000|about 35 minutes|Bitcoin Knots 29.4.2 + AlphaPool performance patch v2.1, with the 976000 snapshot entry (PR #444)|You trust AlphaPool for this build: it is the official 29.4.2 source plus the one chainparams commit of PR #444 and five AlphaPool commits that keep new blocks and mining jobs first while your node checks its history in the background (release notes: https://xbt.alphapool.tech/dl/knots/v2.1/README.txt). AlphaPool built it reproducibly with Guix; independent builders are reproducing and signing it (https://github.com/alphaminetech/knots/pull/1). Until they have, the installer checks the archive against the sha256 pinned here.|您为这个构建版信任 AlphaPool：它是官方 29.4.2 源码，加上 PR #444 的一个 chainparams 提交，以及 AlphaPool 的五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务（发布说明：https://xbt.alphapool.tech/dl/knots/v2.1/README.txt）。AlphaPool 用 Guix 可复现地构建了它；独立构建者正在复现并签名（https://github.com/alphaminetech/knots/pull/1）。在此之前，安装程序用这里固定的 sha256 检查该文件。
+official|29.4.3.knots20260508|https://bitcoinknots.org/files/29.x/29.4.3.knots20260508/bitcoin-29.4.3.knots20260508-x86_64-linux-gnu.tar.gz|4c67f1139b668fc3b98e339dd16112c636b2c0f42c2294b98fb92d1d27943e24|builders|840000 880000 910000 976000|910000|one to two days|the official Bitcoin Knots release|You trust the Bitcoin Knots release builders: the installer checks their signatures on this release, and Bitcoin Knots checks the snapshot against the hash that is part of that release.
+fast|29.4.3.knots20260508|https://xbt.alphapool.tech/dl/knots/v3/guix/bitcoin-43e9a265fd8d-x86_64-linux-gnu.tar.gz|b3931fdee16d29c2d1ed9c5369c71357819fec822408e2410357f35d209c57e8|pin|840000 880000 910000 976000|976000|about 35 minutes|Bitcoin Knots 29.4.3 + AlphaPool performance patch v3|You trust AlphaPool for this build: it is the official 29.4.3 source (signed tag v29.4.3.knots20260508) plus five AlphaPool commits that keep new blocks and mining jobs first while your node checks its history in the background, the same five as in v2.1 (release notes: https://xbt.alphapool.tech/dl/knots/v3/README.txt). AlphaPool built it reproducibly with Guix; independent builders have not signed it yet. Until they have, the installer checks the archive against the sha256 pinned here.|您为这个构建版信任 AlphaPool：它是官方 29.4.3 源码（已签名标签 v29.4.3.knots20260508），加上 AlphaPool 的五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务，这五个提交与 v2.1 相同（发布说明：https://xbt.alphapool.tech/dl/knots/v3/README.txt）。AlphaPool 用 Guix 可复现地构建了它；独立构建者尚未签名。在此之前，安装程序用这里固定的 sha256 检查该文件。
 MODES
 }
 # utxo_table: the snapshot files, one line each:
@@ -99,26 +99,26 @@ UTXO_SEED_MINUTES=120     # after the download: seed the snapshot to other insta
 # validates every block after COPY_HEIGHT by itself, like any node, and there is no history check in the background.
 # A newer copy is a change of these lines and of nothing else; nodes that are installed keep their chain.
 SYNC_DEFAULT="copy"
-COPY_URL="https://snapshots.alphapool.tech:8444/xbt/xbt-chain-20261015T1103Z.tar"
-COPY_SHA256="8ba30b034b5d1746837ea96956b3d7735cf526bb48948fd38526e8e8665a6fd6"
-COPY_BYTES=13984286720
-COPY_HEIGHT=977343
-COPY_BLOCK="00000000000000006358525fbff60b3fc4e5c1daef266e102305faa2046416f0"
+COPY_URL="https://snapshots.alphapool.tech:8444/xbt/xbt-chain-20261028T0506Z.tar"
+COPY_SHA256="7ac88907e86ffd5aa43c7cb17f57de3fe316f59030506750d6d4849dc3eea2df"
+COPY_BYTES=13065861120
+COPY_HEIGHT=979354
+COPY_BLOCK="00000000000000008ea7814da632b8943803e79a06a31309b5c28654c2e26113"
 COPY_ABOUT="under an hour"
 COPY_TRUST="You trust AlphaPool for this chain copy: it is the blocks and chainstate folders of a pruned AlphaPool node that was at the chain tip, packed while that node was stopped. The installer checks the file against the sha256 pinned here; your node validates every block after the copy by itself, but not the history before it."
 COPY_TRUST_ZH="您为这份链数据副本信任 AlphaPool：它是一个已同步到链顶端的 AlphaPool 修剪节点的 blocks 和 chainstate 文件夹，在该节点停止时打包。安装程序用这里固定的 sha256 检查该文件；您的节点会自行验证副本之后的每个区块，但不验证副本之前的历史。"
 # The choice in one sentence (the plan, --help and the guides say it the same way)
-SYNC_TRADEOFF="The chain copy is AlphaPool's recommended start: no background history check, but you trust AlphaPool for the copy; --start fast is the validated-start alternative, trusting only the snapshot hash compiled into Bitcoin Knots and running AlphaPool's v2.1 build with the background-validation fix; --start official is not recommended because its history check takes a day or more, can stop peer replies for minutes, make the node fall behind new blocks and leave mined blocks orphaned."
-SYNC_TRADEOFF_ZH="链数据副本是 AlphaPool 推荐的启动方式：没有后台历史检查，但您需信任 AlphaPool 提供的副本；--start fast 是验证启动的备选方式，只信任编译进 Bitcoin Knots 的快照哈希，运行含后台验证修复的 AlphaPool v2.1 构建版；不推荐 --start official，因为其历史检查需要一天或更久，可能导致节点数分钟不响应对等节点、落后于新区块，并使挖出的区块成为孤块。"
+SYNC_TRADEOFF="The chain copy is AlphaPool's recommended start: no background history check, but you trust AlphaPool for the copy; --start fast is the validated-start alternative, trusting only the snapshot hash compiled into Bitcoin Knots and running AlphaPool's v3 build with the background-validation fix; --start official is not recommended because its history check takes a day or more, can stop peer replies for minutes, make the node fall behind new blocks and leave mined blocks orphaned."
+SYNC_TRADEOFF_ZH="链数据副本是 AlphaPool 推荐的启动方式：没有后台历史检查，但您需信任 AlphaPool 提供的副本；--start fast 是验证启动的备选方式，只信任编译进 Bitcoin Knots 的快照哈希，运行含后台验证修复的 AlphaPool v3 构建版；不推荐 --start official，因为其历史检查需要一天或更久，可能导致节点数分钟不响应对等节点、落后于新区块，并使挖出的区块成为孤块。"
 # Three separately pinned rows for the My node tab's layout B; SYNC_TRADEOFF above keeps layout A available.
 # shellcheck disable=SC2034
 SYNC_RECOMMENDED="Recommended: AlphaPool chain copy (the default) — ready in $COPY_ABOUT, no background history check; you trust AlphaPool for the copy."
 # shellcheck disable=SC2034
 SYNC_RECOMMENDED_ZH="推荐：AlphaPool 链数据副本（默认）——不到一小时即可就绪，没有后台历史检查；您需信任 AlphaPool 提供的副本。"
 # shellcheck disable=SC2034
-SYNC_ALTERNATIVE="Alternative: --start fast — validated start; trusts only the snapshot hash compiled into Bitcoin Knots; runs AlphaPool's v2.1 build with the background-validation fix."
+SYNC_ALTERNATIVE="Alternative: --start fast — validated start; trusts only the snapshot hash compiled into Bitcoin Knots; runs AlphaPool's v3 build with the background-validation fix."
 # shellcheck disable=SC2034
-SYNC_ALTERNATIVE_ZH="备选：--start fast ——验证启动；只信任编译进 Bitcoin Knots 的快照哈希；运行含后台验证修复的 AlphaPool v2.1 构建版。"
+SYNC_ALTERNATIVE_ZH="备选：--start fast ——验证启动；只信任编译进 Bitcoin Knots 的快照哈希；运行含后台验证修复的 AlphaPool v3 构建版。"
 # shellcheck disable=SC2034
 SYNC_NOT_RECOMMENDED="Not recommended: --start official — stock Bitcoin Knots; its history check takes a day or more and makes the node fall behind new blocks, so blocks it finds are often orphaned."
 # shellcheck disable=SC2034
@@ -185,6 +185,8 @@ NODE_CONF_EXTRA=""              # extra bitcoin.conf lines (\n between them); em
 #   https://github.com/bitcoinknots/guix.sigs   branch knots, commit 278e3aeac8ce78c915940b25b3c3bcb9c9f0598e (2026-09-21)
 #   builder-keys/*.gpg ; each line below: primary-key fingerprint, then the sha256 of its key file in that directory.
 # These are the 7 builders whose signatures are on the 29.4.2.knots20260508 release (SHA256SUMS.asc, bitcoinknots.org).
+# 29.4.3.knots20260508 carries 4 signatures; 2 are by keys pinned here (1A3E761F... Luke Dashjr, 1D5889CB...). The
+# official mode needs at least one valid signature by a pinned key.
 #   1A3E761F19D2CC7785C5502EA291A2C45D0C504A  c82ce3a2038cb36ad50aa59e16e42ce5ab4d11ccc6f1a58a71f83c5361974316  (Luke Dashjr, Knots maintainer)
 #   658E64021E5793C6C4E15E45C2E581F5B998F30E  f11f6c1807c15fc48adaf87da383275d63866f897600bafb6e87fee369282963
 #   95636F3538D9262765AB29BEE952E584CA8C0F45  5c3535dad3a31a05b72e54a1e8eab97363e3d645ef7d24a99d5ec098b2332965

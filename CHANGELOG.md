@@ -2,6 +2,22 @@
 
 ## Unreleased
 
+## 2026-10-28.1
+
+- **Bitcoin Knots 29.4.3.knots20260508**, which every node must run before block 979,919 (Knots soft fork: coins
+  generated from that block on mature after 25,920 blocks). `KNOTS_REQUIRED_VER` / `KNOTS_REQUIRED_BY_HEIGHT` pin it,
+  so `alphapool-node status` shows an UPDATE line on a node that runs anything else, and the installer and the
+  upgrade warn.
+- `official` mode: the signed 29.4.3.knots20260508 release (sha256 4c67f1139b668fc3...; its SHA256SUMS carries
+  valid signatures by 2 of the 7 pinned builder keys). It also knows the 976000 snapshot; its own validated start
+  stays at 910000.
+- `fast` mode (the default build): AlphaPool's v3 = the signed 29.4.3 source plus the same five background-validation
+  commits as v2.1, built reproducibly with Guix and pinned by sha256.
+- The chain copy is now of block 979,354 (13.1 GB, sha256 7ac88907e86ffd5a...), packed on a 29.4.3 node.
+- Installed nodes keep their mode and chain: `--upgrade` moves an official node to 29.4.3 and a fast node to v3,
+  in place, with no new sync when it runs before block 979,919. Bitcoin Knots 29.4.3 rechecks the blocks from 979,919
+  at its first start; a pruned node (every chain-copy install) that upgrades later may have to sync again.
+
 ## 2026-10-17.1
 
 - Stop `alphapool-gateway-start` before `datum-gateway` and `knots-node` in the chain-copy switch recipe, so the

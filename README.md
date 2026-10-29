@@ -4,7 +4,7 @@ One command turns a fresh server **you own** into an AlphaPool mining node: a pr
 **DATUM gateway** that builds block templates from your own node. Your rigs connect to your server; your server
 connects to AlphaPool. AlphaPool gets **no access** to your server.
 
-- Script: `install.sh` (version `2026-10-17.1`; changes: `CHANGELOG.md`). Everything below refers to that file.
+- Script: `install.sh` (version `2026-10-28.1`; changes: `CHANGELOG.md`). Everything below refers to that file.
 - Supported: **Ubuntu 24.04 LTS or Ubuntu 22.04 LTS, x64.** Any other system stops at once with error AP-202, before
   anything is changed.
 - Server: **4 GB RAM or more, 80 GB disk or more**, 2 vCPU recommended.
@@ -15,7 +15,7 @@ connects to AlphaPool. AlphaPool gets **no access** to your server.
 - **By default the node starts from AlphaPool's chain copy**: the `blocks` and `chainstate` folders of a pruned
   AlphaPool node at the chain tip, checked against the sha256 pinned in the installer. It is ready in **under an hour**
   and runs no history check in the background. The validated-start alternative (`--start fast`)
-  trusts only the snapshot hash compiled into Bitcoin Knots and runs AlphaPool's v2.1 build with the background-validation fix.
+  trusts only the snapshot hash compiled into Bitcoin Knots and runs AlphaPool's v3 build with the background-validation fix.
   `--start official` is not recommended: its history check can stall peer replies for minutes, fall behind new blocks
   and leave mined blocks orphaned. Keep your rigs mining where they are until the
   installer, or `alphapool-node status`, says **READY**. See "How the node gets its chain".
@@ -23,15 +23,15 @@ connects to AlphaPool. AlphaPool gets **no access** to your server.
 Provider rules: both providers forbid mining ON the server (CPU/GPU hashing). This server does no hashing: it runs a
 Bitcoin node and the gateway your rigs connect to. Contabo writes "we fully support the hosting of Crypto-Nodes" [C6].
 
-### AlphaPool's recommended start: the chain copy (2026-10-17.1)
+### AlphaPool's recommended start: the chain copy (2026-10-28.1)
 
-New nodes get their chain from **AlphaPool's chain copy** of block 977,343 (14.0 GB, sha256 pinned in the installer) and run AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1 performance patch. The node validates every block after the copy by itself and is ready in **under an hour**; there is no history check in the background, so it keeps up with new blocks from the start.
+New nodes get their chain from **AlphaPool's chain copy** of block 979,354 (13.1 GB, sha256 pinned in the installer) and run AlphaPool's Bitcoin Knots 29.4.3 build with the v3 performance patch. The node validates every block after the copy by itself and is ready in **under an hour**; there is no history check in the background, so it keeps up with new blocks from the start.
 
 **The choice in one sentence:** the chain copy is ready in under an hour and has no background history check, so your node keeps up with new blocks from the start, but you trust AlphaPool that the copy is correct; the validated start (`--start fast` or `--start official`) trusts only the snapshot hash compiled into Bitcoin Knots, but its background history check takes a day or more and can make a small server fall behind new blocks.
 
-The build is the official 29.4.2 source plus the one chainparams commit of PR #444 and five AlphaPool commits that keep new blocks and mining jobs first while a node checks its history in the background (https://xbt.alphapool.tech/dl/knots/v2.1/README.txt). AlphaPool built it reproducibly with Guix; independent builders are reproducing and signing it (https://github.com/alphaminetech/knots/pull/1). Once their signatures are published next to the archive, the installer checks them like a release's. The official mode remains available with a warning and an explicit confirmation on new installs (`--yes` accepts it).
+The build is the official 29.4.3 source (signed tag v29.4.3.knots20260508) plus the same five AlphaPool commits as v2.1, which keep new blocks and mining jobs first while a node checks its history in the background (https://xbt.alphapool.tech/dl/knots/v3/README.txt). AlphaPool built it reproducibly with Guix. Once their signatures are published next to the archive, the installer checks them like a release's. The official mode remains available with a warning and an explicit confirmation on new installs (`--yes` accepts it).
 
-该构建版是官方 29.4.2 源码，加上 PR #444 的一个 chainparams 提交，以及 AlphaPool 的五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务（https://xbt.alphapool.tech/dl/knots/v2.1/README.txt）。AlphaPool 用 Guix 可复现地构建了它；独立构建者正在复现并签名（https://github.com/alphaminetech/knots/pull/1）。
+该构建版是官方 29.4.3 源码（已签名标签 v29.4.3.knots20260508），加上与 v2.1 相同的 AlphaPool 五个提交，让节点在后台检查历史区块时仍优先处理新区块和挖矿任务（https://xbt.alphapool.tech/dl/knots/v3/README.txt）。AlphaPool 用 Guix 可复现地构建了它。
 ## Install, form 1: one paste (SSH or the provider's web console)
 
 Log in as root, or as a user with sudo, then paste the command from your AlphaPool dashboard ("My node"). If you are
@@ -113,7 +113,7 @@ Times were measured on a 2 vCPU / 4 GB / 80 GB virtual machine (see "Tested").
 | 2 | user `alphapool`, folders, swap (compressed zram, or a 2 GB file) on servers under 6 GB RAM | (included above) |
 | 3 | Bitcoin Knots: download; each pinned mode is checked against builder signatures and its pinned sha256; install | 10 s |
 | 4 | AlphaPool's DATUM gateway release 3.1: tarball sha256 checked **before unpacking**, binary sha256 checked before installing | 1 s |
-| 5 | the default chain copy: download 14.0 GB (resumable), check its sha256 and that it holds only `blocks/` and `chainstate/`, then the node's user unpacks it. (The validated start instead selects the UTXO snapshot and asks the installed Bitcoin Knots whether it knows that block) | about 15-25 minutes (copy); seconds (validated start) |
+| 5 | the default chain copy: download 13.1 GB (resumable), check its sha256 and that it holds only `blocks/` and `chainstate/`, then the node's user unpacks it. (The validated start instead selects the UTXO snapshot and asks the installed Bitcoin Knots whether it knows that block) | about 15-25 minutes (copy); seconds (validated start) |
 | 6 | configuration: `bitcoin.conf`, gateway config, services | 4 s, steps 6 and 7 together |
 | 7 | firewall: your SSH port(s), stratum, Bitcoin peers allowed; everything else incoming denied | (included above) |
 | 8 | the node starts and begins getting block headers | 16 s |
@@ -203,16 +203,16 @@ them as one thing, a *start mode*: the build (version, archive, sha256, and who 
 that build knows, the snapshot a new node starts from, and how long the node then validates. The modes are a short
 table in the installer; `--help` lists them, each with one sentence that says what you are trusting.
 
-- This version has two modes. The default `fast` mode is AlphaPool's Bitcoin Knots 29.4.2 build with the v2.1
-  performance patch and the PR #444 snapshot entry (pinned by sha256; builder signatures pending) and starts from
-  block 976,000. The `official` mode is the unmodified 29.4.2.knots20260508 release and starts
+- This version has two modes. The default `fast` mode is AlphaPool's Bitcoin Knots 29.4.3 build with the v3
+  performance patch (pinned by sha256; builder signatures pending) and starts from
+  block 976,000. The `official` mode is the unmodified, builder-signed 29.4.3.knots20260508 release and starts
   from block 910,000, which is why that route is estimated at one to two days.
 - `--start NAME` chooses a mode, and with it the validated start of that mode (unless `--sync` says otherwise). Without
   it a new install takes the chain copy and the build of the installer's default mode.
 - When a Bitcoin Knots build carries a newer block, AlphaPool adds a mode (or changes one); the start is then much
   shorter. The mode says whether builder signatures or only its pinned sha256 vouch for the build, and `official`
   stays available.
-- On an installed official-mode node, `sudo alphapool-node upgrade --start fast` changes to AlphaPool's v2.1 build
+- On an installed official-mode node, `sudo alphapool-node upgrade --start fast` changes to AlphaPool's v3 build
   without restarting the chain; that build also knows the official mode's block 910,000 snapshot. `status` offers
   this alternative and the dashboard's chain-copy switch recipe while the history check is still running.
 - **Nodes that are installed already need nothing**: they have their chain, and they keep their mode. A later
@@ -249,7 +249,7 @@ What the installer does around it:
 | option | what | time | 
 |---|---|---|
 | (default) | AlphaPool's chain copy (`--sync copy`), with the build of the default mode | under an hour |
-| `--start fast` | the validated start from snapshot 976000 with AlphaPool's v2.1 build | about 35 minutes, then the history check in the background |
+| `--start fast` | the validated start from snapshot 976000 with AlphaPool's v3 build | about 35 minutes, then the history check in the background |
 | `--start official` | the signed 910000 start | one to two days, then the history check in the background |
 | `--start NAME` | the validated start of another start mode of the installer (`--help` lists them) | that mode's duration |
 | `--utxo-height N` | the validated start from another snapshot of the installer's list | depends on the block |
@@ -415,7 +415,7 @@ on that program is yours, and no upgrade or re-run touches it. Bitcoin Knots cou
 
 ## Your software, your choice
 
-- The default is AlphaPool's tested combination: Knots 29.4.2.knots20260508 and AlphaPool's gateway release 3.1.
+- The default is AlphaPool's tested combination: Knots 29.4.3.knots20260508 (AlphaPool's v3 build) and AlphaPool's gateway release 3.1.
 - You can install any other build, now (`--gateway-file`, `--gateway-url` + `--gateway-sha256`, `--gateway-git` +
   `--gateway-commit`, `--knots-url` + `--knots-sha256`, `--knots-dir`) or later (`alphapool-node switch ...`).
 - The installer warns when a build is not the tested one, and never refuses it.
@@ -431,7 +431,8 @@ on that program is yours, and no upgrade or re-run touches it. Bitcoin Knots cou
   A build you make reports the same source version but may have different bytes; the installer treats it as your
   own build and keeps it on later upgrades.
 - Compatibility:
-  - The node must follow the same chain and rules as AlphaPool: Knots 29.4.2 or later in that line.
+  - The node must follow the same chain and rules as AlphaPool: Knots 29.4.3 or later in that line (required from
+    block 979,919).
   - AlphaPool tests its own gateway build only. Other builds may handle AlphaPool's payout list differently.
   - A Bitcoin Knots build of your own starts from a snapshot only if it has that snapshot's block compiled in. The
     installer asks your build which of its snapshots it knows, and says so if it knows none (AP-122): then name a
@@ -527,7 +528,8 @@ Bitcoin Knots is installed or upgraded only when all of this holds:
 
 Otherwise nothing is installed (errors AP-406, AP-407, AP-401; AP-308 if the signature files cannot be downloaded).
 
-The pinned keys are the 7 builders whose signatures are on the 29.4.2.knots20260508 release. The keys and their
+The pinned keys are the 7 builders whose signatures are on the 29.4.2.knots20260508 release; 2 of them (Luke Dashjr
+and 1D5889CB...) also signed 29.4.3.knots20260508, and one valid signature by a pinned key is enough. The keys and their
 fingerprints come from the official builder-keys directory of the Bitcoin Knots release signatures,
 <https://github.com/bitcoinknots/guix.sigs> (branch `knots`, commit `278e3aeac8ce78c915940b25b3c3bcb9c9f0598e`):
 
@@ -602,7 +604,7 @@ command goes on where it stopped, and `--sync network` chooses the full sync ins
 - Every guard is also checked by a mutation test: the guard is broken on purpose, and its test must fail.
 - The rule that root never works through the node user's folders is checked over the whole script by a test that
   fails when a new such operation appears.
-- In the tests, the real Bitcoin Knots 29.4.2 is asked which snapshots it knows, and the real gateway programs are
+- In the tests, the real Bitcoin Knots 29.4.3 is asked which snapshots it knows, and the real gateway programs are
   installed and run on both releases.
 - The steps of the validated start were measured with the real Bitcoin Knots 29.4.2 and the real 9.6 GB snapshot on
   a machine sized like the 2 vCPU / 4 GB / 80 GB plan: block headers after about 3 minutes, the snapshot loaded
